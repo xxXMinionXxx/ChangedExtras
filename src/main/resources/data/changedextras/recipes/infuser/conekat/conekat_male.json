@@ -1,0 +1,11 @@
+{
+  "type": "changed:infuser",
+  "ingredients": [
+    { "item": "changed:latex_base" },
+    { "item": "changed:white_latex_goo" },
+    { "item": "minecraft:string" },
+    { "item": "minecraft:milk_bucket" },
+    { "item": "minecraft:sweet_berries"}
+  ],
+  "form": "changedextras:conekat_male"
+}

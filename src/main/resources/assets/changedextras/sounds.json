@@ -1,0 +1,20 @@
+{
+  "jackpot_song": {
+    "category": "record",
+    "sounds": [
+      {
+        "name": "changedextras:jackpot_song",
+        "stream": true
+      }
+    ]
+  },
+  "jackpot_stop": {
+    "category": "record",
+    "sounds": [
+      {
+        "name": "changedextras:jackpot_stop",
+        "stream": false
+      }
+    ]
+  }
+}

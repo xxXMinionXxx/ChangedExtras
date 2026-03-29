@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.katt.changedextras.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "changedextras.refmap.json",
+  "mixins": [],
+  "client": [
+    "ForgeHooksClientMixin",
+    "LivingEntityRendererMixin",
+    "OnlineServerEntryMixin",
+    "ServerDataMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
