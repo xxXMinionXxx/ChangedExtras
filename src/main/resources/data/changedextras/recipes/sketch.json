@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "NNN",
+    "IOI",
+    "PPP"
+  ],
+  "key": {
+    "N": {
+      "item": "minecraft:netherite_scrap"
+    },
+    "I": {
+      "item": "minecraft:netherite_ingot"
+    },
+    "O": {
+      "item": "changedextras:the_palette"
+    },
+    "P": {
+      "item": "minecraft:paper"
+    }
+  },
+  "result": {
+    "item": "changedextras:sketch"
+  }
+}

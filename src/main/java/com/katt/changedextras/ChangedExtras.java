@@ -9,6 +9,8 @@ import com.katt.changedextras.entity.ModTransfurVariants;
 import com.katt.changedextras.init.ChangedExtrasAbilities;
 import com.katt.changedextras.init.ChangedExtrasParticles;
 import com.katt.changedextras.init.ChangedExtrasSounds;
+import com.katt.changedextras.item.ArtistBrushItem;
+import com.katt.changedextras.item.ArtistSketchItem;
 import com.katt.changedextras.item.LongSleeveShirt;
 import com.katt.changedextras.network.ChangedExtrasNetwork;
 import com.katt.changedextras.network.DiscoveryNetwork;
@@ -89,6 +91,10 @@ public class ChangedExtras {
             ITEMS.register("conekat_female_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1)));
     public static final RegistryObject<LatexSyringe> WHITE_CAT_SYRINGE =
             ITEMS.register("white_cat_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1)));
+    public static final RegistryObject<Item> THE_PALETTE =
+            ITEMS.register("the_palette", () -> new Item(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
+    public static final RegistryObject<Item> ARTIST_BRUSH =
+            ITEMS.register("artist_brush", () -> new ArtistBrushItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
 
     // The Player-Locked Katt Syringe
     public static final RegistryObject<LatexSyringe> KATT_SYRINGE =
@@ -103,6 +109,9 @@ public class ChangedExtras {
     public static final RegistryObject<SimpleSpawnEggItem> WHITE_CAT_SPAWN_EGG =
             ITEMS.register("white_cat_spawn_egg",
                     () -> new SimpleSpawnEggItem(ModEntities.WHITE_CAT, 0xF6F3F3, 0xF1CF6E, new Item.Properties()));
+    public static final RegistryObject<Item> ARTIST_SPAWN_EGG =
+            ITEMS.register("sketch",
+                    () -> new ArtistSketchItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
     public static final RegistryObject<Item> LONG_SLEEVE_SHIRT = ITEMS.register("long_sleeve_shirt",
             () -> new LongSleeveShirt());
 
@@ -128,6 +137,7 @@ public class ChangedExtras {
                         output.accept(CONEKAT_MALE_SPAWN_EGG.get());
                         output.accept(CONEKAT_FEMALE_SPAWN_EGG.get());
                         output.accept(WHITE_CAT_SPAWN_EGG.get());
+                        output.accept(ARTIST_SPAWN_EGG.get());
                     })
                     .build());
 
@@ -166,6 +176,10 @@ public class ChangedExtras {
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) {
             event.accept(ICECREAM_BLOCK_ITEM.get());
+        } else if (event.getTabKey() == CreativeModeTabs.INGREDIENTS) {
+            event.accept(THE_PALETTE.get());
+        } else if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
+            event.accept(ARTIST_BRUSH.get());
         }
     }
 

@@ -1,7 +1,7 @@
 package com.katt.changedextras.entity.model;
 
 import com.katt.changedextras.ChangedExtras;
-import com.katt.changedextras.entity.beasts.WhiteCatEntity;
+import com.katt.changedextras.entity.beasts.AbstractWhiteCatEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.ltxprogrammer.changed.client.renderer.animate.AnimatorPresets;
@@ -21,7 +21,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-public class WhiteCatEntityModel extends AdvancedHumanoidModel<WhiteCatEntity> {
+public class WhiteCatEntityModel<T extends AbstractWhiteCatEntity> extends AdvancedHumanoidModel<T> {
     public static final ModelLayerLocation LAYER_LOCATION =
             new ModelLayerLocation(ResourceLocation.fromNamespaceAndPath(ChangedExtras.MODID, "white_cat"), "main");
 
@@ -31,7 +31,7 @@ public class WhiteCatEntityModel extends AdvancedHumanoidModel<WhiteCatEntity> {
     private final ModelPart leftArm;
     private final ModelPart head;
     private final ModelPart torso;
-    private final HumanoidAnimator<WhiteCatEntity, WhiteCatEntityModel> animator;
+    private final HumanoidAnimator<T, WhiteCatEntityModel<T>> animator;
 
     public WhiteCatEntityModel(ModelPart root) {
         super(root);
@@ -143,17 +143,17 @@ public class WhiteCatEntityModel extends AdvancedHumanoidModel<WhiteCatEntity> {
     }
 
     @Override
-    public void prepareMobModel(WhiteCatEntity entity, float limbSwing, float limbSwingAmount, float partialTicks) {
+    public void prepareMobModel(T entity, float limbSwing, float limbSwingAmount, float partialTicks) {
         super.prepareMobModel(entity, limbSwing, limbSwingAmount, partialTicks);
     }
 
     @Override
-    public void setupHand(WhiteCatEntity entity) {
+    public void setupHand(T entity) {
         animator.setupHand();
     }
 
     @Override
-    public void setupAnim(@NotNull WhiteCatEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
+    public void setupAnim(@NotNull T entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
         animator.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
         super.setupAnim(entity, limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
     }
@@ -189,7 +189,7 @@ public class WhiteCatEntityModel extends AdvancedHumanoidModel<WhiteCatEntity> {
     }
 
     @Override
-    public HumanoidAnimator<WhiteCatEntity, ?> getAnimator(WhiteCatEntity entity) {
+    public HumanoidAnimator<T, ?> getAnimator(T entity) {
         return animator;
     }
 }

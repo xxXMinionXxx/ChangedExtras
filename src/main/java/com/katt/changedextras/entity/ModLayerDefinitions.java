@@ -1,6 +1,7 @@
 package com.katt.changedextras.entity;
 
 import com.katt.changedextras.ChangedExtras;
+import com.katt.changedextras.entity.model.ArtistEntityModel;
 import com.katt.changedextras.entity.model.ConeKatFemaleEntityModel;
 import com.katt.changedextras.entity.model.ConeKatMaleEntityModel;
 import com.katt.changedextras.entity.model.KattEntityModel;
@@ -17,6 +18,7 @@ public class ModLayerDefinitions {
         event.registerLayerDefinition(ConeKatMaleEntityModel.LAYER_LOCATION, ConeKatMaleEntityModel::createBodyLayer);
         event.registerLayerDefinition(ConeKatFemaleEntityModel.LAYER_LOCATION, ConeKatFemaleEntityModel::createBodyLayer);
         event.registerLayerDefinition(WhiteCatEntityModel.LAYER_LOCATION, WhiteCatEntityModel::createBodyLayer);
+        event.registerLayerDefinition(ArtistEntityModel.LAYER_LOCATION, ArtistEntityModel::createBodyLayer);
         event.registerLayerDefinition(KattEntityModel.LAYER_LOCATION, KattEntityModel::createBodyLayer);
     }
 }

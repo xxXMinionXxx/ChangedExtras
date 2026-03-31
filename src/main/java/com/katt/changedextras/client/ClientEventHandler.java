@@ -41,6 +41,7 @@ public class ClientEventHandler {
         public static void onClientDisconnect(net.minecraftforge.event.level.LevelEvent.Unload event) {
             if (event.getLevel().isClientSide()) {
                 JackpotSoundManager.clear(Minecraft.getInstance());
+                ArtistTintManager.clearAll();
             }
         }
 

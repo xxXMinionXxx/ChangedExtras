@@ -15,10 +15,17 @@ public class ChangedExtrasNetwork {
 
     public static void register() {
         int id = 0;
-        // This registers the Jackpot packet into the channel
         INSTANCE.registerMessage(id++, JackpotStatePacket.class,
                 JackpotStatePacket::encode,
                 JackpotStatePacket::decode,
                 JackpotStatePacket::handle);
+        INSTANCE.registerMessage(id++, SaveArtistBrushPacket.class,
+                SaveArtistBrushPacket::encode,
+                SaveArtistBrushPacket::decode,
+                SaveArtistBrushPacket::handle);
+        INSTANCE.registerMessage(id++, SyncArtistColorPacket.class,
+                SyncArtistColorPacket::encode,
+                SyncArtistColorPacket::decode,
+                SyncArtistColorPacket::handle);
     }
 }

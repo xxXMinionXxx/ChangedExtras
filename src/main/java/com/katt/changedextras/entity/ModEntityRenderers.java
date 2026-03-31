@@ -3,6 +3,7 @@ package com.katt.changedextras.entity;
 import com.katt.changedextras.ChangedExtras;
 import com.katt.changedextras.entity.model.ConeKatFemaleEntityModel;
 import com.katt.changedextras.entity.model.ConeKatMaleEntityModel;
+import com.katt.changedextras.entity.model.ArtistEntityModel;
 import com.katt.changedextras.entity.model.KattEntityModel;
 import com.katt.changedextras.entity.model.WhiteCatEntityModel;
 import net.minecraftforge.api.distmarker.Dist;
@@ -20,7 +21,9 @@ public class ModEntityRenderers {
         registerHumanoid(event, ModEntities.CONEKAT_FEMALE.get(),
                 context -> new ModEntityRenderer<>(context, new ConeKatFemaleEntityModel(context.bakeLayer(ConeKatFemaleEntityModel.LAYER_LOCATION))));
         registerHumanoid(event, ModEntities.WHITE_CAT.get(),
-                context -> new WhiteCatRenderer<>(context, new WhiteCatEntityModel(context.bakeLayer(WhiteCatEntityModel.LAYER_LOCATION))));
+                context -> new WhiteCatRenderer<>(context, new WhiteCatEntityModel<>(context.bakeLayer(WhiteCatEntityModel.LAYER_LOCATION))));
+        registerHumanoid(event, ModEntities.ARTIST.get(),
+                ArtistRenderer::new);
         registerHumanoid(event, ModEntities.KATT.get(),
                 KattRenderer::new);
     }
