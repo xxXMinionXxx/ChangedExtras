@@ -1,6 +1,5 @@
 package com.katt.changedextras.mixin;
 
-import com.katt.changedextras.client.discovery.DetectedServerWebhookNotifier;
 import com.katt.changedextras.client.discovery.ChangedExtrasServerMarker;
 import com.katt.changedextras.client.discovery.DiscoverySupport;
 import net.minecraft.client.multiplayer.ServerData;
@@ -17,8 +16,5 @@ public class ForgeHooksClientMixin {
     private static void changedextras$captureMarker(ServerStatus status, ServerData target, CallbackInfo ci) {
         boolean hasChangedExtras = DiscoverySupport.hasChangedExtras(status.forgeData().orElse(null));
         ((ChangedExtrasServerMarker) target).changedextras$setHasChangedExtras(hasChangedExtras);
-        if (hasChangedExtras) {
-            DetectedServerWebhookNotifier.onDetected(target);
-        }
     }
 }

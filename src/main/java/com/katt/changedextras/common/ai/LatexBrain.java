@@ -48,9 +48,9 @@ public class LatexBrain {
     private static final double SEARCH_REACH = 1.75D;
     private static final double LOOT_RANGE = 10.0D;
     private static final double PICKUP_RANGE = 2.2D;
-    private static final float DIRECT_WALK_SPEED = 2.05F;
-    private static final float DIRECT_RUN_SPEED = 2.35F;
-    private static final double SPRINT_JUMP_BOOST = 0.9D;
+    private static final float DIRECT_WALK_SPEED = 0.45F;
+    private static final float DIRECT_RUN_SPEED = 0.65F;
+    private static final double SPRINT_JUMP_BOOST = 0.75D;
     private static final double BREAK_PATH_STEP = 0.5D;
     private static final int BREAK_PATH_SCAN_BLOCKS = 16;
     private static final int TERRAIN_COMMIT_TICKS = 10;
@@ -58,6 +58,7 @@ public class LatexBrain {
     private static final int SEARCH_TIMEOUT = 80;
     private static final int BLOCK_BREAK_COMMIT = 18;
     private static final int ATTACK_COOLDOWN = 10;
+    private static final double FORGIVE_RANGE = 24.0D;
 
     private enum State {
         IDLE,
@@ -228,16 +229,53 @@ public class LatexBrain {
 
         mob.swing(InteractionHand.MAIN_HAND);
         if (mob.distanceTo(target) <= ATTACK_RANGE + 0.15D) {
-            if (target instanceof Player playerTarget && ProcessTransfur.getPlayerTransfurVariant(playerTarget) != null) {
+            boolean targetWasPlayer = target instanceof Player;
+            boolean wasAlreadyInfected = targetWasPlayer
+                    && ProcessTransfur.getPlayerTransfurVariant((Player) target) != null;
+            boolean transfurred = false;
+
+            if (target instanceof Player playerTarget && wasAlreadyInfected) {
                 mob.doHurtTarget(target);
-            } else if (!mob.tryTransfurTarget(target)) {
-                mob.doHurtTarget(target);
+            } else {
+                transfurred = mob.tryTransfurTarget(target);
+                if (!transfurred) {
+                    mob.doHurtTarget(target);
+                }
+            }
+
+            if (target instanceof Player playerTarget && !wasAlreadyInfected && transfurred
+                    && ProcessTransfur.getPlayerTransfurVariant(playerTarget) != null) {
+                Vec3 knock = target.position().subtract(mob.position()).normalize().scale(0.25D);
+                target.push(knock.x, 0.08D, knock.z);
+                mind.attackCooldown = ATTACK_COOLDOWN;
+                forgiveFreshlyInfectedPlayer(mob, playerTarget);
+                return;
             }
 
             Vec3 knock = target.position().subtract(mob.position()).normalize().scale(0.25D);
             target.push(knock.x, 0.08D, knock.z);
             mind.attackCooldown = ATTACK_COOLDOWN;
             maybeAlertNearbyLatex(mob, target);
+        }
+    }
+
+    private void forgiveFreshlyInfectedPlayer(ChangedEntity mob, Player player) {
+        clearAggroForTarget(mob, player);
+
+        AABB box = mob.getBoundingBox().inflate(FORGIVE_RANGE);
+        for (ChangedEntity ally : mob.level().getEntitiesOfClass(ChangedEntity.class, box, entity -> entity.isAlive())) {
+            clearAggroForTarget(ally, player);
+        }
+    }
+
+    private void clearAggroForTarget(ChangedEntity mob, LivingEntity target) {
+        LatexMind targetMind = LatexMindStore.get(mob);
+        LivingEntity currentTarget = mob.getTarget();
+        if (currentTarget != null && currentTarget.getUUID().equals(target.getUUID())) {
+            mob.setTarget(null);
+        }
+        if (targetMind.targetId != null && targetMind.targetId.equals(target.getUUID())) {
+            targetMind.clearTarget();
         }
     }
 
@@ -647,6 +685,9 @@ public class LatexBrain {
                 mind.targetId = currentTarget.getUUID();
             }
             return currentTarget;
+        }
+        if (currentTarget != null) {
+            mob.setTarget(null);
         }
 
         LivingEntity remembered = findRememberedTarget(mob, mind);
@@ -1397,13 +1438,13 @@ public class LatexBrain {
 
     private boolean shouldDropTarget(ChangedEntity mob, LatexMind mind) {
         LivingEntity currentTarget = mob.getTarget();
-        if (currentTarget instanceof Player playerTarget && !playerTarget.isAlive()) {
+        if (currentTarget instanceof Player playerTarget && (!playerTarget.isAlive() || playerTarget.isCreative() || playerTarget.isSpectator())) {
             return true;
         }
 
         if (mind.targetId != null && mob.level() instanceof ServerLevel server) {
             Player rememberedPlayer = server.getPlayerByUUID(mind.targetId);
-            return rememberedPlayer != null && !rememberedPlayer.isAlive();
+            return rememberedPlayer != null && (!rememberedPlayer.isAlive() || rememberedPlayer.isCreative() || rememberedPlayer.isSpectator());
         }
 
         return false;

@@ -4,7 +4,6 @@ import com.katt.changedextras.client.renderer.accessory.DyeableClothingRenderer;
 import com.katt.changedextras.client.ClientEventHandler;
 import com.katt.changedextras.client.particle.JackpotSmokeParticleProvider;
 import com.katt.changedextras.common.ChangedExtrasGameRules;
-import com.katt.changedextras.common.ServerUsageWebhookNotifier;
 import com.katt.changedextras.entity.ModEntities;
 import com.katt.changedextras.entity.ModTransfurVariants;
 import com.katt.changedextras.init.ChangedExtrasAbilities;
@@ -46,7 +45,6 @@ import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
-import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -188,11 +186,6 @@ public class ChangedExtras {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.info("[Changed Extras] Server starting");
-    }
-
-    @SubscribeEvent
-    public void onServerStarted(ServerStartedEvent event) {
-        ServerUsageWebhookNotifier.notifyServerStarted(event.getServer());
     }
 
     @SubscribeEvent

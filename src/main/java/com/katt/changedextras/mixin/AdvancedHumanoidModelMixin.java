@@ -20,38 +20,41 @@ public abstract class AdvancedHumanoidModelMixin<T extends ChangedEntity> {
             return;
         }
 
-        AdvancedHumanoidModel<T> model = (AdvancedHumanoidModel<T>)(Object)this;
-        ModelPart head = ((HeadedModel)model).getHead();
-        ModelPart torso = ((TorsoedModel)model).getTorso();
-        ModelPart rightArm = model.getArm(HumanoidArm.RIGHT);
-        ModelPart leftArm = model.getArm(HumanoidArm.LEFT);
-        ModelPart rightLeg = model.getLeg(HumanoidArm.RIGHT);
-        ModelPart leftLeg = model.getLeg(HumanoidArm.LEFT);
-        if (head == null || torso == null || rightArm == null || leftArm == null || rightLeg == null || leftLeg == null) {
-            return;
+        try {
+            AdvancedHumanoidModel<T> model = (AdvancedHumanoidModel<T>)(Object)this;
+            ModelPart head = ((HeadedModel)model).getHead();
+            ModelPart torso = ((TorsoedModel)model).getTorso();
+            ModelPart rightArm = model.getArm(HumanoidArm.RIGHT);
+            ModelPart leftArm = model.getArm(HumanoidArm.LEFT);
+            ModelPart rightLeg = model.getLeg(HumanoidArm.RIGHT);
+            ModelPart leftLeg = model.getLeg(HumanoidArm.LEFT);
+            if (head == null || torso == null || rightArm == null || leftArm == null || rightLeg == null || leftLeg == null) {
+                return;
+            }
+
+            float rollWave = (float)Math.sin(ageInTicks * 0.22F) * 0.08F;
+            torso.zRot = 1.15F + rollWave;
+            torso.xRot = 0.2F;
+            torso.yRot = 0.0F;
+
+            head.xRot = 0.35F;
+            head.yRot = -0.18F + rollWave * 0.3F;
+            head.zRot = 1.05F + rollWave * 0.5F;
+
+            rightArm.xRot = -1.4F;
+            rightArm.yRot = -0.2F;
+            rightArm.zRot = 0.45F;
+            leftArm.xRot = -1.15F;
+            leftArm.yRot = 0.3F;
+            leftArm.zRot = -0.3F;
+
+            rightLeg.xRot = -1.25F + rollWave;
+            rightLeg.yRot = 0.1F;
+            rightLeg.zRot = 0.22F;
+            leftLeg.xRot = -1.45F - rollWave;
+            leftLeg.yRot = -0.08F;
+            leftLeg.zRot = -0.18F;
+        } catch (ClassCastException | NullPointerException ignored) {
         }
-
-        float rollWave = (float)Math.sin(ageInTicks * 0.22F) * 0.08F;
-        torso.zRot = 1.15F + rollWave;
-        torso.xRot = 0.2F;
-        torso.yRot = 0.0F;
-
-        head.xRot = 0.35F;
-        head.yRot = -0.18F + rollWave * 0.3F;
-        head.zRot = 1.05F + rollWave * 0.5F;
-
-        rightArm.xRot = -1.4F;
-        rightArm.yRot = -0.2F;
-        rightArm.zRot = 0.45F;
-        leftArm.xRot = -1.15F;
-        leftArm.yRot = 0.3F;
-        leftArm.zRot = -0.3F;
-
-        rightLeg.xRot = -1.25F + rollWave;
-        rightLeg.yRot = 0.1F;
-        rightLeg.zRot = 0.22F;
-        leftLeg.xRot = -1.45F - rollWave;
-        leftLeg.yRot = -0.08F;
-        leftLeg.zRot = -0.18F;
     }
 }

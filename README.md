@@ -37,14 +37,15 @@ I'm planning to add multiple species from other verses that aren't changed, the 
 
 # FAQ
 
-### Where do i find the cafeteria?
+### Where do I find the cafeteria?
 
 *   In the blue-stripped zone in facilities
 
-### How do i get the conekat transfur?
+### How do I get the conekat transfur?
 
-*   Either using it's syringe, or eating 3 Ice cream
+*   Either using its syringe, or eating 3 Ice cream
 
 # How do I contribute?
 
-You *can't* contribute to this project, as I want to keep the code as I like it, tho you can make suggestions via my discord server
+~~You *can't* contribute to this project, as I want to keep the code as I like it, tho you can make suggestions via my discord server~~
+As of the 8 of april, you **can** contribute to this project, suggestions will be kept as they are.
