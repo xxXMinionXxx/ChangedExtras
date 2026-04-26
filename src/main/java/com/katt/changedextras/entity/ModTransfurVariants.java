@@ -4,6 +4,7 @@ import com.katt.changedextras.ChangedExtras;
 import com.katt.changedextras.entity.beasts.ConeKatFemaleEntity;
 import com.katt.changedextras.entity.beasts.ConeKatMaleEntity;
 import com.katt.changedextras.entity.beasts.KattEntity;
+import com.katt.changedextras.entity.beasts.ArtistEntity;
 import com.katt.changedextras.entity.beasts.WhiteCatEntity;
 import com.katt.changedextras.init.ChangedExtrasAbilities;
 import net.ltxprogrammer.changed.entity.variant.GenderedPair;
@@ -63,6 +64,15 @@ public class ModTransfurVariants {
                             .reducedFall(true)
                             .extraJumps(2)
 
+                            .build());
+
+    public static final RegistryObject<TransfurVariant<ArtistEntity>> ARTIST =
+            REGISTRY.register("artist",
+                    () -> TransfurVariant.Builder.of(ModEntities.ARTIST)
+                            .nightVision()
+                            .addAbility(ChangedExtrasAbilities.PAINT_BALL)
+                            .addAbility(ChangedExtrasAbilities.SWING)
+                            .addAbility(ChangedExtrasAbilities.PUNCTURE)
                             .build());
 
 }

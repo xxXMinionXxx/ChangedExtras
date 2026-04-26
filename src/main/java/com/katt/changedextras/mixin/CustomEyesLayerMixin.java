@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(CustomEyesLayer.class)
 public class CustomEyesLayerMixin {
-    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/ltxprogrammer/changed/entity/ChangedEntity;FFFFFF)V", at = @At("HEAD"), remap = false)
+    @Inject(method = "render", at = @At("HEAD"), remap = false, require = 0)
     private void changedextras$resetEyesTint(PoseStack poseStack, MultiBufferSource buffer, int packedLight, ChangedEntity entity, float limbSwing, float limbSwingAmount, float partialTicks, float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
         if (entity instanceof ArtistEntity) {
             BasicPlayerInfo info = entity.getBasicPlayerInfo();
@@ -27,7 +27,7 @@ public class CustomEyesLayerMixin {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/ltxprogrammer/changed/entity/ChangedEntity;FFFFFF)V", at = @At("TAIL"), remap = false)
+    @Inject(method = "render", at = @At("TAIL"), remap = false, require = 0)
     private void changedextras$restoreBodyTint(PoseStack poseStack, MultiBufferSource buffer, int packedLight, ChangedEntity entity, float limbSwing, float limbSwingAmount, float partialTicks, float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
         Integer tint = ArtistTintManager.getTint(entity.getId());
         if (tint == null) {

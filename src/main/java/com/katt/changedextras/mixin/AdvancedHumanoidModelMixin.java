@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(AdvancedHumanoidModel.class)
 public abstract class AdvancedHumanoidModelMixin<T extends ChangedEntity> {
-    @Inject(method = "setupAnim(Lnet/ltxprogrammer/changed/entity/ChangedEntity;FFFFF)V", at = @At("TAIL"), remap = false)
+    @Inject(method = "setupAnim", at = @At("TAIL"), remap = false, require = 0)
     private void changedextras$applyCuddlePose(T entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
         if (!LatexCuddleHelper.shouldCuddle(entity)) {
             return;

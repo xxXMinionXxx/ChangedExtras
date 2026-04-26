@@ -5,7 +5,6 @@ import net.ltxprogrammer.changed.entity.ChangedEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
-import net.ltxprogrammer.changed.process.ProcessTransfur;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -14,8 +13,14 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.AbstractSkeleton;
+import net.minecraft.world.entity.monster.Evoker;
+import net.minecraft.world.entity.monster.Pillager;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
@@ -37,6 +42,10 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class LatexBrain {
     private static final TagKey<net.minecraft.world.entity.EntityType<?>> CHANGED_HUMANOIDS =
@@ -48,19 +57,42 @@ public class LatexBrain {
     private static final double SEARCH_REACH = 1.75D;
     private static final double LOOT_RANGE = 10.0D;
     private static final double PICKUP_RANGE = 2.2D;
-    private static final float DIRECT_WALK_SPEED = 0.45F;
-    private static final float DIRECT_RUN_SPEED = 0.65F;
-    private static final double SPRINT_JUMP_BOOST = 0.75D;
+    private static final double DIRECT_WALK_SPEED = 0.68D;
+    private static final double DIRECT_RUN_SPEED = 0.76D;
+    private static final double DIRECT_SPRINT_SPEED = 0.82D;
+    private static final double DIRECT_FACE_MIN_DISTANCE_SQR = 0.36D;
+    private static final double WATCH_APPROACH_SPEED = 0.74D;
+    private static final double WATCH_SIDE_OFFSET = 1.15D;
+    private static final double WATCH_MIN_DISTANCE = 2.6D;
+    private static final double WATCH_MAX_DISTANCE = 4.4D;
+    private static final double NARROW_FOOTING_SAMPLE = 0.32D;
+    private static final double BREAK_MOVE_SPEED = 0.72D;
+    private static final double BUILD_MOVE_SPEED = 0.68D;
+    private static final double SEARCH_MOVE_SPEED = 0.68D;
+    private static final double LOOT_MOVE_SPEED = 0.66D;
+    private static final double RETREAT_MOVE_SPEED = 0.72D;
+    private static final double TOWER_ALIGN_SPEED = 0.46D;
+    private static final double CAUTIOUS_FOOTING_SPEED = 0.42D;
+    private static final double MAX_VISIBLE_TARGET_RANGE = 14.0D;
+    private static final double MAX_REMEMBERED_TARGET_RANGE = 20.0D;
+    private static final double HARD_TARGET_DROP_RANGE = 24.0D;
+    private static final double PLAYER_SPRINT_JUMP_BOOST = 0.18D;
+    private static final double PLAYER_SPRINT_JUMP_SPEED_CAP = 0.32D;
     private static final double BREAK_PATH_STEP = 0.5D;
     private static final int BREAK_PATH_SCAN_BLOCKS = 16;
+    private static final int IMAGINARY_PATH_SCAN_BLOCKS = 12;
+    private static final int IMAGINARY_PATH_MAX_BLOCKS = 8;
+    private static final int ALT_PATH_SEARCH_RADIUS = 3;
     private static final int TERRAIN_COMMIT_TICKS = 10;
     private static final int BUILD_BLOCK_RESERVE = 4;
     private static final int SEARCH_TIMEOUT = 80;
     private static final int BLOCK_BREAK_COMMIT = 18;
     private static final int ATTACK_COOLDOWN = 10;
-    private static final double FORGIVE_RANGE = 24.0D;
-
-    private enum State {
+    private static final int DECISION_INTERVAL_TICKS = 4;
+    private static final int PATH_CACHE_TICKS = 8;
+    private static final int TERRAIN_CACHE_TICKS = 6;
+    private static final double BREAK_PREFERENCE_PENALTY = 18.0D;
+    enum State {
         IDLE,
         CHASE,
         ATTACK,
@@ -68,10 +100,12 @@ public class LatexBrain {
         BUILD,
         SEARCH,
         LOOT,
-        REPOSITION
+        REPOSITION,
+        WATCH_TARGET
     }
 
-    private record TerrainPlan(@Nullable BlockPos breakPos, @Nullable BlockPos buildPos, double breakCost, double buildCost) {}
+    private record TerrainPlan(@Nullable BlockPos breakPos, @Nullable BlockPos buildPos, List<BlockPos> imaginedBuildPath,
+                               double breakCost, double buildCost) {}
     private record WaterBucketSource(ItemStack stack, @Nullable InteractionHand hand, int inventorySlot) {}
 
     private State state = State.IDLE;
@@ -109,7 +143,7 @@ public class LatexBrain {
         updateStuck(mob, mind);
 
         if (thinkCooldown-- <= 0) {
-            thinkCooldown = 2;
+            thinkCooldown = DECISION_INTERVAL_TICKS;
             state = decideState(mob, mind, target);
         }
 
@@ -121,6 +155,7 @@ public class LatexBrain {
             case SEARCH -> search(mob, mind);
             case LOOT -> loot(mob);
             case REPOSITION -> reposition(mob, mind, target);
+            case WATCH_TARGET -> watchTarget(mob, target);
             default -> idle(mob);
         }
     }
@@ -134,13 +169,13 @@ public class LatexBrain {
         if (mind.lootScanCooldown > 0) mind.lootScanCooldown--;
         if (mind.equipmentScanCooldown > 0) mind.equipmentScanCooldown--;
         if (mind.allyAlertCooldown > 0) mind.allyAlertCooldown--;
+        if (mind.recentBreakTicks > 0) mind.recentBreakTicks--;
     }
 
     private State decideState(ChangedEntity mob, LatexMind mind, @Nullable LivingEntity target) {
         if (target != null && target.isAlive()) {
             double distance = mob.distanceTo(target);
-            Path path = createReachPath(mob, target);
-            boolean hasReachablePath = path != null;
+            boolean hasReachablePath = hasReachablePath(mob, mind, target);
 
             if (shouldRetreat(mob, target)) {
                 return State.REPOSITION;
@@ -160,7 +195,7 @@ public class LatexBrain {
                 return State.CHASE;
             }
 
-            if (mind.noPathTicks < TERRAIN_COMMIT_TICKS && mind.stuckTicks < 6) {
+            if (!mind.pathFailed && mind.stuckTicks < 6) {
                 return State.CHASE;
             }
 
@@ -169,7 +204,13 @@ public class LatexBrain {
                 return terrainState;
             }
 
-            return State.CHASE;
+            if (hasNearbyFistMineableDropBlock(mob, target)
+                    && mind.noPathTicks < TERRAIN_COMMIT_TICKS
+                    && mind.stuckTicks < 6) {
+                return State.CHASE;
+            }
+
+            return State.WATCH_TARGET;
         }
 
         if (mind.remembersRecentTarget(mob) && mind.searchTicks < SEARCH_TIMEOUT) {
@@ -180,38 +221,97 @@ public class LatexBrain {
     }
 
     private void idle(ChangedEntity mob) {
-        if (mob.getNavigation().isDone()) {
-            mob.getMoveControl().strafe(0.0F, 0.0F);
-        }
+        mob.setSprinting(false);
     }
 
     private void chase(ChangedEntity mob, @Nullable LivingEntity target) {
         if (target == null) return;
 
         equipBestCombatTool(mob);
-        if (canUseDirectChase(mob, target)) {
-            applyDirectChaseMovement(mob, target, target.isSprinting() ? DIRECT_RUN_SPEED : DIRECT_WALK_SPEED);
+        boolean narrowFooting = isOnNarrowFooting(mob);
+        boolean sprintJumpChase = !narrowFooting && canSprintJumpChase(mob, target);
+        mob.setSprinting(sprintJumpChase);
+        double speed = resolveChaseSpeed(target, sprintJumpChase);
+        if (narrowFooting) {
+            speed = Math.min(speed, CAUTIOUS_FOOTING_SPEED);
+        }
+        Path reachPath = createReachPath(mob, target);
+        if (reachPath != null) {
+            mob.setZza(0.0F);
+            mob.setXxa(0.0F);
+            mob.getNavigation().moveTo(reachPath, speed);
+            faceTarget(mob, target, 8.0F);
+            mob.getLookControl().setLookAt(target, 10.0F, 10.0F);
+        } else if (canUseDirectChase(mob, target)) {
+            applyDirectChaseMovement(mob, target, speed);
         } else {
             mob.setZza(0.0F);
             mob.setXxa(0.0F);
-            double speed = target.isSprinting() ? 1.9D : 1.7D;
-            Path path = createReachPath(mob, target);
-            if (path != null) {
-                mob.getNavigation().moveTo(path, speed);
-            } else {
-                mob.getNavigation().moveTo(target, 1.55D);
-            }
+            mob.getNavigation().moveTo(target, speed);
             mob.getLookControl().setLookAt(target, 10.0F, 10.0F);
         }
-        smartJump(mob, target);
-        maybeAlertNearbyLatex(mob, target);
+        if (!narrowFooting) {
+            smartJump(mob, target);
+        }
+    }
+
+    private void watchTarget(ChangedEntity mob, @Nullable LivingEntity target) {
+        mob.setSprinting(false);
+        mob.setZza(0.0F);
+        mob.setXxa(0.0F);
+
+        if (target != null) {
+            moveNearWatchPosition(mob, target);
+            faceTarget(mob, target, 10.0F);
+            mob.getLookControl().setLookAt(target, 16.0F, 16.0F);
+        } else {
+            mob.getNavigation().stop();
+        }
+    }
+
+    private void moveNearWatchPosition(ChangedEntity mob, LivingEntity target) {
+        Vec3 toMob = mob.position().subtract(target.position()).multiply(1.0D, 0.0D, 1.0D);
+        if (toMob.lengthSqr() < 0.001D) {
+            toMob = new Vec3(1.0D, 0.0D, 0.0D);
+        }
+
+        double distance = Math.sqrt(toMob.lengthSqr());
+        Vec3 radial = toMob.normalize();
+        boolean narrowFooting = isOnNarrowFooting(mob);
+        Vec3 sideways = narrowFooting
+                ? Vec3.ZERO
+                : new Vec3(-radial.z, 0.0D, radial.x)
+                        .scale(((mob.tickCount / 20) & 1) == 0 ? WATCH_SIDE_OFFSET : -WATCH_SIDE_OFFSET);
+        Vec3 watchPos = target.position().add(radial.scale(WATCH_MAX_DISTANCE)).add(sideways);
+
+        if (distance > WATCH_MAX_DISTANCE + 0.4D) {
+            moveTowardWatchPos(mob, target, watchPos);
+        } else if (distance < WATCH_MIN_DISTANCE) {
+            Vec3 retreatPos = target.position().add(radial.scale(WATCH_MIN_DISTANCE + 0.8D));
+            moveTowardWatchPos(mob, target, retreatPos);
+        } else if (!narrowFooting && mob.tickCount % 24 == 0) {
+            moveTowardWatchPos(mob, target, watchPos);
+        } else {
+            mob.getNavigation().stop();
+        }
+    }
+
+    private void moveTowardWatchPos(ChangedEntity mob, LivingEntity target, Vec3 watchPos) {
+        Path path = mob.getNavigation().createPath(BlockPos.containing(watchPos), 0);
+        if (path != null && path.canReach()) {
+            mob.getNavigation().moveTo(path, WATCH_APPROACH_SPEED);
+        } else if (mob.hasLineOfSight(target)) {
+            mob.getNavigation().moveTo(watchPos.x, watchPos.y, watchPos.z, WATCH_APPROACH_SPEED);
+        } else {
+            mob.getNavigation().stop();
+        }
     }
 
     private void attack(ChangedEntity mob, @Nullable LivingEntity target) {
         if (target == null) return;
 
         equipBestCombatTool(mob);
-        mob.getMoveControl().strafe(0.0F, 0.0F);
+        mob.setSprinting(false);
 
         double distance = mob.distanceTo(target);
         mob.getLookControl().setLookAt(target, 16.0F, 16.0F);
@@ -222,69 +322,37 @@ public class LatexBrain {
         }
 
         mob.getNavigation().stop();
-        applyDirectChaseMovement(mob, target, target.isSprinting() ? DIRECT_RUN_SPEED : DIRECT_WALK_SPEED);
+        mob.setZza(0.0F);
+        mob.setXxa(0.0F);
+        faceTarget(mob, target, 10.0F);
 
         LatexMind mind = LatexMindStore.get(mob);
         if (mind.attackCooldown > 0) return;
 
         mob.swing(InteractionHand.MAIN_HAND);
         if (mob.distanceTo(target) <= ATTACK_RANGE + 0.15D) {
-            boolean targetWasPlayer = target instanceof Player;
-            boolean wasAlreadyInfected = targetWasPlayer
-                    && ProcessTransfur.getPlayerTransfurVariant((Player) target) != null;
-            boolean transfurred = false;
-
-            if (target instanceof Player playerTarget && wasAlreadyInfected) {
-                mob.doHurtTarget(target);
-            } else {
-                transfurred = mob.tryTransfurTarget(target);
-                if (!transfurred) {
-                    mob.doHurtTarget(target);
-                }
-            }
-
-            if (target instanceof Player playerTarget && !wasAlreadyInfected && transfurred
-                    && ProcessTransfur.getPlayerTransfurVariant(playerTarget) != null) {
-                Vec3 knock = target.position().subtract(mob.position()).normalize().scale(0.25D);
-                target.push(knock.x, 0.08D, knock.z);
-                mind.attackCooldown = ATTACK_COOLDOWN;
-                forgiveFreshlyInfectedPlayer(mob, playerTarget);
-                return;
-            }
-
+            mob.doHurtTarget(target);
             Vec3 knock = target.position().subtract(mob.position()).normalize().scale(0.25D);
             target.push(knock.x, 0.08D, knock.z);
             mind.attackCooldown = ATTACK_COOLDOWN;
-            maybeAlertNearbyLatex(mob, target);
-        }
-    }
-
-    private void forgiveFreshlyInfectedPlayer(ChangedEntity mob, Player player) {
-        clearAggroForTarget(mob, player);
-
-        AABB box = mob.getBoundingBox().inflate(FORGIVE_RANGE);
-        for (ChangedEntity ally : mob.level().getEntitiesOfClass(ChangedEntity.class, box, entity -> entity.isAlive())) {
-            clearAggroForTarget(ally, player);
-        }
-    }
-
-    private void clearAggroForTarget(ChangedEntity mob, LivingEntity target) {
-        LatexMind targetMind = LatexMindStore.get(mob);
-        LivingEntity currentTarget = mob.getTarget();
-        if (currentTarget != null && currentTarget.getUUID().equals(target.getUUID())) {
-            mob.setTarget(null);
-        }
-        if (targetMind.targetId != null && targetMind.targetId.equals(target.getUUID())) {
-            targetMind.clearTarget();
         }
     }
 
     private void breakObstacle(ChangedEntity mob, LatexMind mind, @Nullable LivingEntity target) {
         if (target == null) return;
+        if (hasReachablePath(mob, mind, target)) {
+            resetBlockBreaking(mob, mind);
+            mind.plannedBreakPos = null;
+            chase(mob, target);
+            return;
+        }
 
-        BlockPos pos = mind.plannedBreakPos != null ? mind.plannedBreakPos : findBreakTarget(mob, target);
+        BlockPos pos = mind.activeBreakPos;
         if (pos == null) {
-            mind.blockBreakTicks = 0;
+            pos = mind.plannedBreakPos != null ? mind.plannedBreakPos : findBreakTarget(mob, target);
+        }
+        if (pos == null) {
+            resetBlockBreaking(mob, mind);
             mind.plannedBreakPos = null;
             stopShieldingIfIdle(mob);
             chase(mob, target);
@@ -293,49 +361,119 @@ public class LatexBrain {
 
         BlockState state = mob.level().getBlockState(pos);
         if (state.isAir() || state.getDestroySpeed(mob.level(), pos) < 0 || mind.breakCooldown > 0 || !canBreakBlock(mob, pos, state)) {
-            mind.blockBreakTicks = 0;
+            resetBlockBreaking(mob, mind);
             mind.plannedBreakPos = null;
             stopShieldingIfIdle(mob);
             chase(mob, target);
             return;
         }
 
-        mob.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.78D);
-        mob.getLookControl().setLookAt(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        if (mind.activeBreakPos == null || !mind.activeBreakPos.equals(pos)) {
+            resetBlockBreaking(mob, mind);
+            mind.activeBreakPos = pos.immutable();
+        }
+
+        Vec3 breakCenter = Vec3.atCenterOf(pos);
+        if (mob.distanceToSqr(breakCenter) > 6.25D) {
+            mob.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, BREAK_MOVE_SPEED);
+        } else {
+            mob.getNavigation().stop();
+            mob.setDeltaMovement(0.0D, mob.getDeltaMovement().y, 0.0D);
+            mob.setZza(0.0F);
+            mob.setXxa(0.0F);
+        }
+
+        faceBlock(mob, pos, 10.0F);
 
         ItemStack tool = findBestMiningTool(mob, state);
         if (!tool.isEmpty()) {
             mob.setItemInHand(InteractionHand.MAIN_HAND, tool);
         }
 
-        setBestShieldOffhand(mob);
-        raiseShieldIfPossible(mob);
+        mob.stopUsingItem();
 
         mind.blockBreakTicks++;
+        if (mind.blockBreakTicks % 4 == 0) {
+            mob.swing(InteractionHand.MAIN_HAND);
+        }
 
-        if (mob.level() instanceof ServerLevel server && mind.blockBreakTicks % 4 == 0) {
-            int stage = Math.min(9, (mind.blockBreakTicks * 10) / BLOCK_BREAK_COMMIT);
+        mind.blockBreakProgress += getBreakProgressPerTick(mob, pos, state, tool);
+
+        if (mob.level() instanceof ServerLevel server) {
+            int stage = Math.min(9, Math.max(0, Mth.floor(mind.blockBreakProgress * 10.0F)));
             server.destroyBlockProgress(mob.getId(), pos, stage);
         }
 
-        if (mind.blockBreakTicks >= BLOCK_BREAK_COMMIT) {
+        if (mind.blockBreakProgress >= 1.0F) {
             mob.swing(InteractionHand.MAIN_HAND);
             mob.level().destroyBlock(pos, true, mob);
-            mind.blockBreakTicks = 0;
+            resetBlockBreaking(mob, mind);
             mind.breakCooldown = 8;
+            mind.recentBreakTicks = 20;
             mind.plannedBreakPos = null;
             stopShieldingIfIdle(mob);
         }
+    }
+
+    private void resetBlockBreaking(ChangedEntity mob, LatexMind mind) {
+        if (mob.level() instanceof ServerLevel server && mind.activeBreakPos != null) {
+            server.destroyBlockProgress(mob.getId(), mind.activeBreakPos, -1);
+        }
+
+        mind.activeBreakPos = null;
+        mind.blockBreakTicks = 0;
+        mind.blockBreakProgress = 0.0F;
+    }
+
+    private void faceBlock(ChangedEntity mob, BlockPos pos, float maxTurnStep) {
+        Vec3 center = Vec3.atCenterOf(pos);
+        Vec3 horizontalDelta = center.subtract(mob.position()).multiply(1.0D, 0.0D, 1.0D);
+        if (horizontalDelta.lengthSqr() < DIRECT_FACE_MIN_DISTANCE_SQR) {
+            return;
+        }
+
+        float desiredYaw = (float)(Mth.atan2(horizontalDelta.z, horizontalDelta.x) * (180.0F / Math.PI)) - 90.0F;
+        float smoothedYaw = rotlerp(mob.getYRot(), desiredYaw, maxTurnStep);
+        mob.setYRot(smoothedYaw);
+        mob.setYBodyRot(rotlerp(mob.yBodyRot, smoothedYaw, maxTurnStep));
+        mob.yHeadRot = rotlerp(mob.yHeadRot, smoothedYaw, maxTurnStep + 2.0F);
+        mob.yHeadRotO = mob.yHeadRot;
+    }
+
+    private float getBreakProgressPerTick(ChangedEntity mob, BlockPos pos, BlockState state, ItemStack tool) {
+        float hardness = state.getDestroySpeed(mob.level(), pos);
+        if (hardness <= 0.0F) {
+            return 1.0F;
+        }
+
+        float speed = 1.0F;
+        if (!tool.isEmpty()) {
+            speed = Math.max(1.0F, tool.getDestroySpeed(state));
+        }
+
+        if (canBreakBlock(mob, pos, state)) {
+            return Math.max(0.08F, speed / (hardness * 8.0F));
+        }
+
+        return Math.max(0.03F, speed / (hardness * 24.0F));
     }
 
     private void buildTowardTarget(ChangedEntity mob, LatexMind mind, @Nullable LivingEntity target) {
         if (target == null) return;
 
         boolean towerMode = shouldTowerUp(mob, target);
-        BlockPos placePos = towerMode ? findBuildPlacement(mob, target) :
-                (mind.plannedBuildPos != null ? mind.plannedBuildPos : findBuildPlacement(mob, target));
+        if (!towerMode) {
+            pruneImaginedBuildPath(mob, mind);
+        }
+
+        BlockPos placePos = towerMode
+                ? findBuildPlacement(mob, target)
+                : (!mind.imaginedBuildPath.isEmpty()
+                        ? mind.imaginedBuildPath.get(0)
+                        : (mind.plannedBuildPos != null ? mind.plannedBuildPos : findBuildPlacement(mob, target)));
         if (placePos == null) {
             mind.plannedBuildPos = null;
+            mind.imaginedBuildPath.clear();
             chase(mob, target);
             return;
         }
@@ -344,7 +482,7 @@ public class LatexBrain {
         if (blockStack.isEmpty()) {
             ItemEntity source = findBestBlockPickup(mob);
             if (source != null) {
-                mob.getNavigation().moveTo(source, 0.82D);
+                mob.getNavigation().moveTo(source, BUILD_MOVE_SPEED);
                 if (mob.distanceTo(source) < PICKUP_RANGE) {
                     pickUpItemToHands(mob, source);
                 }
@@ -357,6 +495,7 @@ public class LatexBrain {
 
         if (!(blockStack.getItem() instanceof BlockItem blockItem)) {
             mind.plannedBuildPos = null;
+            mind.imaginedBuildPath.clear();
             chase(mob, target);
             return;
         }
@@ -365,13 +504,17 @@ public class LatexBrain {
         boolean towerPlacement = towerMode && isTowerPlacement(mob, target, placePos);
         boolean canPlace = towerPlacement ? canPlaceTowerBlockAt(mob, placePos, placeState) : canPlaceBlockAt(mob, placePos, placeState);
         if (!canPlace) {
+            if (!towerMode && !mind.imaginedBuildPath.isEmpty() && placePos.equals(mind.imaginedBuildPath.get(0))) {
+                mind.imaginedBuildPath.remove(0);
+            }
             mind.plannedBuildPos = null;
             chase(mob, target);
             return;
         }
 
+        double placementSpeed = isCautiousPlacement(mob, placePos) ? CAUTIOUS_FOOTING_SPEED : BUILD_MOVE_SPEED;
         if (!moveNearPlacement(mob, placePos)) {
-            mob.getNavigation().moveTo(placePos.getX() + 0.5D, placePos.getY(), placePos.getZ() + 0.5D, 0.82D);
+            mob.getNavigation().moveTo(placePos.getX() + 0.5D, placePos.getY(), placePos.getZ() + 0.5D, placementSpeed);
             return;
         }
 
@@ -392,13 +535,14 @@ public class LatexBrain {
             mob.level().playSound(null, placePos, sound.getPlaceSound(), mob.getSoundSource(), sound.getVolume(), sound.getPitch());
             consumeOneMatchingItem(mob, blockStack);
             mind.buildCooldown = 10;
-            mind.plannedBuildPos = null;
+            if (!mind.imaginedBuildPath.isEmpty() && placePos.equals(mind.imaginedBuildPath.get(0))) {
+                mind.imaginedBuildPath.remove(0);
+            }
+            mind.plannedBuildPos = mind.imaginedBuildPath.isEmpty() ? null : mind.imaginedBuildPath.get(0);
             if (towerPlacement) {
                 mind.jumpCooldown = 8;
             } else if (target.getY() > mob.getY() + 1.2D && mob.onGround()) {
-                mob.setDeltaMovement(0.0D, 0.42D, 0.0D);
-                mob.hasImpulse = true;
-                mind.jumpCooldown = 8;
+                triggerJump(mob, mind, null, 8);
             }
         }
     }
@@ -411,12 +555,11 @@ public class LatexBrain {
         double horizontalOffsetSqr = dx * dx + dz * dz;
 
         mob.getNavigation().stop();
-        mob.getMoveControl().strafe(0.0F, 0.0F);
         mob.setDeltaMovement(0.0D, mob.getDeltaMovement().y, 0.0D);
         mob.getLookControl().setLookAt(target, 8.0F, 8.0F);
 
         if (horizontalOffsetSqr > 0.03D) {
-            mob.getNavigation().moveTo(center.x, mob.getY(), center.z, 0.35D);
+            mob.getNavigation().moveTo(center.x, mob.getY(), center.z, TOWER_ALIGN_SPEED);
             return true;
         }
 
@@ -437,9 +580,7 @@ public class LatexBrain {
         }
 
         if (mob.onGround() && mind.jumpCooldown == 0) {
-            mob.setDeltaMovement(0.0D, 0.42D, 0.0D);
-            mob.hasImpulse = true;
-            mind.jumpCooldown = 4;
+            triggerJump(mob, mind, null, 4);
         }
 
         return true;
@@ -452,7 +593,7 @@ public class LatexBrain {
                 mind.lastSeenPos.getX() + 0.5D,
                 mind.lastSeenPos.getY(),
                 mind.lastSeenPos.getZ() + 0.5D,
-                0.8D
+                SEARCH_MOVE_SPEED
         );
 
         if (mob.blockPosition().closerThan(mind.lastSeenPos, SEARCH_REACH)) {
@@ -466,7 +607,7 @@ public class LatexBrain {
         ItemEntity item = findBestItemEntity(mob);
         if (item == null) return;
 
-        mob.getNavigation().moveTo(item, 0.82D);
+        mob.getNavigation().moveTo(item, LOOT_MOVE_SPEED);
         mob.getLookControl().setLookAt(item, 25.0F, 25.0F);
 
         if (mob.distanceTo(item) < PICKUP_RANGE) {
@@ -476,6 +617,7 @@ public class LatexBrain {
 
     private void reposition(ChangedEntity mob, LatexMind mind, @Nullable LivingEntity target) {
         if (target == null) return;
+        mob.setSprinting(false);
 
         Vec3 away = mob.position().subtract(target.position());
         if (away.lengthSqr() < 0.001D) {
@@ -483,7 +625,7 @@ public class LatexBrain {
         }
 
         Vec3 retreat = mob.position().add(away.normalize().scale(4.0D));
-        mob.getNavigation().moveTo(retreat.x, retreat.y, retreat.z, 0.9D);
+        mob.getNavigation().moveTo(retreat.x, retreat.y, retreat.z, RETREAT_MOVE_SPEED);
         if (mind.jumpCooldown == 0 && mob.isEyeInFluid(FluidTags.WATER)) {
             mob.setDeltaMovement(0.0D, 0.42D, 0.0D);
             mob.hasImpulse = true;
@@ -501,25 +643,61 @@ public class LatexBrain {
         return mob.hasLineOfSight(target)
                 && Math.abs(target.getY() - mob.getY()) < 1.8D
                 && !mob.horizontalCollision
+                && !isOnNarrowFooting(mob)
                 && mob.distanceTo(target) < 18.0D;
     }
 
-    private void applyDirectChaseMovement(ChangedEntity mob, LivingEntity target, float moveSpeed) {
-        mob.getNavigation().stop();
-        mob.getMoveControl().strafe(0.0F, 0.0F);
-
-        float desiredYaw = (float)(Mth.atan2(target.getZ() - mob.getZ(), target.getX() - mob.getX()) * (180.0F / Math.PI)) - 90.0F;
-        float smoothedYaw = rotlerp(mob.getYRot(), desiredYaw, 8.0F);
-
-        mob.setYRot(smoothedYaw);
-        mob.setYBodyRot(smoothedYaw);
-        mob.yHeadRot = rotlerp(mob.yHeadRot, smoothedYaw, 10.0F);
-        mob.yHeadRotO = mob.yHeadRot;
-
-        mob.setSpeed(moveSpeed);
-        mob.setZza(1.0F);
+    private void applyDirectChaseMovement(ChangedEntity mob, LivingEntity target, double moveSpeed) {
+        mob.setZza(0.0F);
         mob.setXxa(0.0F);
-        mob.getLookControl().setLookAt(target, 8.0F, 8.0F);
+        faceTarget(mob, target, 8.0F);
+        mob.getNavigation().moveTo(target, moveSpeed);
+    }
+
+    private double resolveChaseSpeed(LivingEntity target, boolean sprintJumpChase) {
+        if (sprintJumpChase) {
+            return DIRECT_SPRINT_SPEED;
+        }
+
+        return target.isSprinting() ? DIRECT_RUN_SPEED : DIRECT_WALK_SPEED;
+    }
+
+    private boolean isOnNarrowFooting(ChangedEntity mob) {
+        Vec3 center = mob.position();
+        int supportedSamples = 0;
+        double[] offsets = {-NARROW_FOOTING_SAMPLE, NARROW_FOOTING_SAMPLE};
+
+        for (double xOffset : offsets) {
+            for (double zOffset : offsets) {
+                if (hasSupportBelow(mob, center.x + xOffset, center.y, center.z + zOffset)) {
+                    supportedSamples++;
+                }
+            }
+        }
+
+        return supportedSamples <= 2;
+    }
+
+    private boolean hasSupportBelow(ChangedEntity mob, double x, double y, double z) {
+        BlockPos below = BlockPos.containing(x, y - 0.2D, z);
+        BlockState state = mob.level().getBlockState(below);
+        return !state.isAir() && !state.getCollisionShape(mob.level(), below).isEmpty();
+    }
+
+    private void faceTarget(ChangedEntity mob, LivingEntity target, float maxTurnStep) {
+        Vec3 horizontalDelta = target.position().subtract(mob.position()).multiply(1.0D, 0.0D, 1.0D);
+        if (horizontalDelta.lengthSqr() < DIRECT_FACE_MIN_DISTANCE_SQR) {
+            mob.getLookControl().setLookAt(target, maxTurnStep, maxTurnStep);
+            return;
+        }
+
+        float desiredYaw = (float)(Mth.atan2(horizontalDelta.z, horizontalDelta.x) * (180.0F / Math.PI)) - 90.0F;
+        float smoothedYaw = rotlerp(mob.getYRot(), desiredYaw, maxTurnStep);
+        mob.setYRot(smoothedYaw);
+        mob.setYBodyRot(rotlerp(mob.yBodyRot, smoothedYaw, maxTurnStep));
+        mob.yHeadRot = rotlerp(mob.yHeadRot, smoothedYaw, maxTurnStep + 2.0F);
+        mob.yHeadRotO = mob.yHeadRot;
+        mob.getLookControl().setLookAt(target, maxTurnStep, maxTurnStep);
     }
 
     private float rotlerp(float current, float target, float maxStep) {
@@ -646,15 +824,13 @@ public class LatexBrain {
 
     private void smartJump(ChangedEntity mob, LivingEntity target) {
         LatexMind mind = LatexMindStore.get(mob);
-        if (mind.jumpCooldown > 0 || !mob.onGround()) return;
+        if (mind.jumpCooldown > 0 || !mob.onGround() || isOnNarrowFooting(mob)) return;
 
-        if (canSprintJumpChase(mob, target)) {
+        if (target instanceof Player && canSprintJumpChase(mob, target)) {
             Vec3 flat = target.position().subtract(mob.position()).multiply(1.0D, 0.0D, 1.0D);
             if (flat.lengthSqr() > 0.001D) {
-                Vec3 forward = flat.normalize().scale(SPRINT_JUMP_BOOST);
-                mob.setDeltaMovement(forward.x, 0.42D, forward.z);
-                mob.hasImpulse = true;
-                mind.jumpCooldown = 10;
+                Vec3 forward = flat.normalize().scale(PLAYER_SPRINT_JUMP_BOOST);
+                triggerJump(mob, mind, forward, 10);
                 return;
             }
         }
@@ -663,24 +839,41 @@ public class LatexBrain {
                 || (target.getY() - mob.getY() > 1.1D && mob.distanceTo(target) < 3.25D);
 
         if (needsJump) {
-            mob.setDeltaMovement(0.0D, 0.42D, 0.0D);
-            mob.hasImpulse = true;
-            mind.jumpCooldown = 16;
+            triggerJump(mob, mind, null, 16);
         }
     }
 
+    private void triggerJump(ChangedEntity mob, LatexMind mind, @Nullable Vec3 horizontalBoost, int cooldownTicks) {
+        if (mind.jumpCooldown > 0 || !mob.onGround()) {
+            return;
+        }
+
+        Vec3 current = mob.getDeltaMovement();
+        Vec3 boost = horizontalBoost == null ? Vec3.ZERO : horizontalBoost;
+        Vec3 horizontal = new Vec3(current.x + boost.x, 0.0D, current.z + boost.z);
+        if (horizontalBoost != null && horizontal.lengthSqr() > PLAYER_SPRINT_JUMP_SPEED_CAP * PLAYER_SPRINT_JUMP_SPEED_CAP) {
+            horizontal = horizontal.normalize().scale(PLAYER_SPRINT_JUMP_SPEED_CAP);
+        }
+        mob.setJumping(true);
+        mob.getJumpControl().jump();
+        mob.setDeltaMovement(horizontal.x, Math.max(current.y, 0.42D), horizontal.z);
+        mob.hasImpulse = true;
+        mob.hurtMarked = true;
+        mind.jumpCooldown = cooldownTicks;
+    }
+
     private boolean canSprintJumpChase(ChangedEntity mob, LivingEntity target) {
-        return canUseDirectChase(mob, target)
-                && Math.abs(target.getY() - mob.getY()) <= 1.5D
-                && mob.distanceTo(target) > 3.0D
-                && mob.distanceTo(target) < 16.0D
+        double horizontalDistanceSqr = target.position().subtract(mob.position()).multiply(1.0D, 0.0D, 1.0D).lengthSqr();
+        return Math.abs(target.getY() - mob.getY()) <= 2.0D
+                && horizontalDistanceSqr > 16.0D
+                && horizontalDistanceSqr < 196.0D
                 && !mob.horizontalCollision;
     }
 
     @Nullable
     private LivingEntity resolveTarget(ChangedEntity mob, LatexMind mind) {
         LivingEntity currentTarget = mob.getTarget();
-        if (currentTarget != null && isValidAggroTarget(mob, currentTarget)) {
+        if (currentTarget != null && isValidAggroTarget(mob, currentTarget, mind)) {
             if (mind.targetId == null || !mind.targetId.equals(currentTarget.getUUID())) {
                 mind.targetId = currentTarget.getUUID();
             }
@@ -696,7 +889,7 @@ public class LatexBrain {
             return remembered;
         }
 
-        LivingEntity visibleTarget = findVisibleTarget(mob);
+        LivingEntity visibleTarget = findVisibleTarget(mob, mind);
         if (visibleTarget != null) {
             mob.setTarget(visibleTarget);
             mind.targetId = visibleTarget.getUUID();
@@ -709,50 +902,165 @@ public class LatexBrain {
     @Nullable
     private Path createReachPath(ChangedEntity mob, LivingEntity target) {
         Path path = mob.getNavigation().createPath(target, 0);
-        if (path == null) return null;
-        return path.canReach() ? path : null;
+        if (path != null && path.canReach()) {
+            return path;
+        }
+        return createNearbyReachPath(mob, target);
+    }
+
+    @Nullable
+    private Path createNearbyReachPath(ChangedEntity mob, LivingEntity target) {
+        BlockPos targetPos = target.blockPosition();
+        Path bestPath = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int radius = 0; radius <= ALT_PATH_SEARCH_RADIUS; radius++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) {
+                            continue;
+                        }
+
+                        BlockPos candidate = targetPos.offset(dx, dy, dz);
+                        if (!isStandableTargetPosition(mob, candidate)) {
+                            continue;
+                        }
+
+                        Path candidatePath = mob.getNavigation().createPath(candidate, 0);
+                        if (candidatePath == null || !candidatePath.canReach()) {
+                            continue;
+                        }
+
+                        double distance = candidate.distSqr(targetPos);
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            bestPath = candidatePath;
+                        }
+                    }
+                }
+            }
+        }
+
+        return bestPath;
+    }
+
+    private boolean isStandableTargetPosition(ChangedEntity mob, BlockPos pos) {
+        BlockState feet = mob.level().getBlockState(pos);
+        BlockState head = mob.level().getBlockState(pos.above());
+        if ((!feet.isAir() && !feet.canBeReplaced()) || (!head.isAir() && !head.canBeReplaced())) {
+            return false;
+        }
+
+        BlockPos below = pos.below();
+        BlockState support = mob.level().getBlockState(below);
+        return !support.isAir() && !support.getCollisionShape(mob.level(), below).isEmpty();
+    }
+
+    private boolean hasReachablePath(ChangedEntity mob, LatexMind mind, LivingEntity target) {
+        BlockPos targetPos = target.blockPosition();
+        BlockPos sourcePos = mob.blockPosition();
+        if (mind.cachedPathTargetPos != null
+                && mind.cachedPathSourcePos != null
+                && mob.tickCount - mind.cachedPathTick <= PATH_CACHE_TICKS
+                && mind.cachedPathTargetPos.closerThan(targetPos, 2.0D)
+                && mind.cachedPathSourcePos.closerThan(sourcePos, 2.0D)) {
+            return mind.cachedReachablePath;
+        }
+
+        mind.cachedPathTick = mob.tickCount;
+        mind.cachedPathTargetPos = targetPos.immutable();
+        mind.cachedPathSourcePos = sourcePos.immutable();
+        mind.cachedReachablePath = createReachPath(mob, target) != null;
+        return mind.cachedReachablePath;
     }
 
     @Nullable
     private State chooseTerrainAction(ChangedEntity mob, LatexMind mind, LivingEntity target) {
+        BlockPos targetPos = target.blockPosition();
+        BlockPos sourcePos = mob.blockPosition();
+        if (mind.cachedTerrainState != null
+                && mind.cachedTerrainTargetPos != null
+                && mind.cachedTerrainSourcePos != null
+                && mob.tickCount - mind.cachedTerrainTick <= TERRAIN_CACHE_TICKS
+                && mind.cachedTerrainTargetPos.closerThan(targetPos, 2.0D)
+                && mind.cachedTerrainSourcePos.closerThan(sourcePos, 2.0D)) {
+            mind.plannedBreakPos = mind.cachedTerrainBreakPos;
+            mind.plannedBuildPos = mind.cachedTerrainBuildPos;
+            mind.imaginedBuildPath = new ArrayList<>(mind.cachedImaginedBuildPath);
+            return mind.cachedTerrainState;
+        }
+
         TerrainPlan plan = analyzeTerrainPlan(mob, mind, target);
         BlockPos breakPos = plan.breakPos();
         BlockPos buildPos = plan.buildPos();
+        List<BlockPos> imaginedBuildPath = plan.imaginedBuildPath();
         double breakCost = plan.breakCost();
         double buildCost = plan.buildCost();
 
         mind.plannedBreakPos = Double.isFinite(breakCost) ? breakPos : null;
         mind.plannedBuildPos = Double.isFinite(buildCost) ? buildPos : null;
+        mind.imaginedBuildPath = new ArrayList<>(imaginedBuildPath);
 
         if (!Double.isFinite(breakCost) && !Double.isFinite(buildCost)) {
+            cacheTerrainPlan(mob, mind, targetPos, sourcePos, null, null, List.of(), null);
             return null;
         }
 
-        if (buildCost < breakCost) {
-            return State.BUILD;
+        State chosen;
+        if (Double.isFinite(buildCost) && !Double.isFinite(breakCost)) {
+            chosen = State.BUILD;
+        } else if (Double.isFinite(buildCost) && mind.recentBreakTicks > 0) {
+            chosen = State.BUILD;
+        } else if (Double.isFinite(buildCost) && buildCost <= breakCost + BREAK_PREFERENCE_PENALTY) {
+            chosen = State.BUILD;
+        } else if (!Double.isFinite(buildCost) && Double.isFinite(breakCost)) {
+            chosen = State.BREAK;
+        } else {
+            chosen = buildCost < breakCost ? State.BUILD : State.BREAK;
         }
+        cacheTerrainPlan(mob, mind, targetPos, sourcePos, mind.plannedBreakPos, mind.plannedBuildPos, mind.imaginedBuildPath, chosen);
+        return chosen;
+    }
 
-        return State.BREAK;
+    private void cacheTerrainPlan(ChangedEntity mob, LatexMind mind, BlockPos targetPos, BlockPos sourcePos,
+                                  @Nullable BlockPos breakPos, @Nullable BlockPos buildPos, List<BlockPos> imaginedBuildPath,
+                                  @Nullable State chosen) {
+        mind.cachedTerrainTick = mob.tickCount;
+        mind.cachedTerrainTargetPos = targetPos.immutable();
+        mind.cachedTerrainSourcePos = sourcePos.immutable();
+        mind.cachedTerrainBreakPos = breakPos != null ? breakPos.immutable() : null;
+        mind.cachedTerrainBuildPos = buildPos != null ? buildPos.immutable() : null;
+        mind.cachedImaginedBuildPath = new ArrayList<>(imaginedBuildPath);
+        mind.cachedTerrainState = chosen;
     }
 
     private TerrainPlan analyzeTerrainPlan(ChangedEntity mob, LatexMind mind, LivingEntity target) {
         BlockPos immediateBreak = findPlannedBreakTarget(mob, target);
-        BlockPos immediateBuild = shouldBuild(mob, mind, target) ? findImmediateBuildPlacement(mob, target) : null;
+        List<BlockPos> imaginedBuildPath = shouldBuild(mob, mind, target)
+                ? buildImaginaryBuildPath(mob, target, defaultBuildState(mob))
+                : List.of();
+        BlockPos immediateBuild = !imaginedBuildPath.isEmpty()
+                ? imaginedBuildPath.get(0)
+                : (shouldBuild(mob, mind, target) ? findImmediateBuildPlacement(mob, target) : null);
 
         double breakCost = estimateBreakCost(mob, immediateBreak);
-        double buildCost = estimateBuildCost(mob, target, immediateBuild);
+        double buildCost = estimateBuildCost(mob, target, immediateBuild, imaginedBuildPath);
 
         if (Double.isFinite(breakCost) || Double.isFinite(buildCost)) {
-            return new TerrainPlan(immediateBreak, immediateBuild, breakCost, buildCost);
+            return new TerrainPlan(immediateBreak, immediateBuild, imaginedBuildPath, breakCost, buildCost);
         }
 
         BlockPos fallbackBreak = findRaycastBreakTarget(mob, target);
-        BlockPos fallbackBuild = shouldBuild(mob, mind, target) ? findFallbackBuildPlacement(mob, target) : null;
+        BlockPos fallbackBuild = !imaginedBuildPath.isEmpty()
+                ? imaginedBuildPath.get(0)
+                : (shouldBuild(mob, mind, target) ? findFallbackBuildPlacement(mob, target) : null);
         return new TerrainPlan(
                 fallbackBreak,
                 fallbackBuild,
+                imaginedBuildPath,
                 estimateBreakCost(mob, fallbackBreak),
-                estimateBuildCost(mob, target, fallbackBuild)
+                estimateBuildCost(mob, target, fallbackBuild, imaginedBuildPath)
         );
     }
 
@@ -855,9 +1163,8 @@ public class LatexBrain {
 
         boolean blocksFeetSpace = candidate.equals(corridorBase) || candidate.equals(corridorBase.above());
         boolean blocksHeadSpace = candidate.equals(corridorBase.above(2));
-        boolean blocksFloorTransition = candidate.equals(corridorBase.below()) && mob.level().getBlockState(corridorBase).isAir();
 
-        return (blocksFeetSpace || blocksHeadSpace || blocksFloorTransition) && canBreakBlock(mob, candidate, state);
+        return (blocksFeetSpace || blocksHeadSpace) && canBreakBlock(mob, candidate, state);
     }
 
     private boolean isBreakCandidate(ChangedEntity mob, BlockPos pos) {
@@ -869,6 +1176,60 @@ public class LatexBrain {
             return false;
         }
         return canBreakBlock(mob, pos, state);
+    }
+
+    private boolean hasNearbyFistMineableDropBlock(ChangedEntity mob, LivingEntity target) {
+        BlockPos origin = mob.blockPosition();
+        Direction direction = horizontalDirectionToward(mob, target);
+        BlockPos[] priorityCandidates = new BlockPos[] {
+                origin.relative(direction),
+                origin.relative(direction).above(),
+                origin.relative(direction).above(2),
+                origin.relative(direction, 2),
+                origin.relative(direction, 2).above(),
+                origin.above(),
+                origin.above(2)
+        };
+
+        for (BlockPos candidate : priorityCandidates) {
+            if (isFistMineableDropCandidate(mob, candidate)) {
+                return true;
+            }
+        }
+
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = -1; dy <= 2; dy++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    if (isFistMineableDropCandidate(mob, origin.offset(dx, dy, dz))) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isFistMineableDropCandidate(ChangedEntity mob, BlockPos pos) {
+        if (mob.distanceToSqr(Vec3.atCenterOf(pos)) > 12.25D) {
+            return false;
+        }
+
+        BlockState state = mob.level().getBlockState(pos);
+        if (state.isAir() || state.getDestroySpeed(mob.level(), pos) < 0.0F || state.requiresCorrectToolForDrops()) {
+            return false;
+        }
+
+        float hardness = state.getDestroySpeed(mob.level(), pos);
+        if (hardness > 1.5F) {
+            return false;
+        }
+
+        if (!(mob.level() instanceof ServerLevel serverLevel)) {
+            return false;
+        }
+
+        return !Block.getDrops(state, serverLevel, pos, mob.level().getBlockEntity(pos), mob, ItemStack.EMPTY).isEmpty();
     }
 
     @Nullable
@@ -926,11 +1287,11 @@ public class LatexBrain {
             return front;
         }
 
-        if (mob.onGround() && mob.level().getBlockState(frontBelow).canBeReplaced() && canPlaceBlockAt(mob, frontBelow, buildState)) {
+        if (shouldPlaceBridgeBlock(mob, target, frontBelow, buildState)) {
             return frontBelow;
         }
 
-        if (mob.onGround() && mob.level().getBlockState(secondFrontBelow).canBeReplaced() && canPlaceBlockAt(mob, secondFrontBelow, buildState)) {
+        if (shouldPlaceBridgeBlock(mob, target, secondFrontBelow, buildState)) {
             return secondFrontBelow;
         }
 
@@ -950,14 +1311,15 @@ public class LatexBrain {
             }
         }
 
-        if (mob.onGround() && canPlaceBlockAt(mob, bridge, defaultBuildState(mob))) {
+        BlockState buildState = defaultBuildState(mob);
+        if (shouldPlaceBridgeBlock(mob, target, bridge, buildState)) {
             return bridge;
         }
 
         Path path = mob.getNavigation().createPath(target, 0);
         if (path == null && target.getY() > mob.getY() + 1.2D) {
             BlockPos scaffold = mob.blockPosition().relative(direction);
-            if (canPlaceBlockAt(mob, scaffold, defaultBuildState(mob))) {
+            if (canPlaceBlockAt(mob, scaffold, buildState)) {
                 return scaffold;
             }
         }
@@ -975,6 +1337,116 @@ public class LatexBrain {
 
     private boolean moveNearPlacement(ChangedEntity mob, BlockPos placePos) {
         return mob.distanceToSqr(placePos.getX() + 0.5D, placePos.getY() + 0.5D, placePos.getZ() + 0.5D) <= 6.25D;
+    }
+
+    private void pruneImaginedBuildPath(ChangedEntity mob, LatexMind mind) {
+        while (!mind.imaginedBuildPath.isEmpty()) {
+            BlockPos next = mind.imaginedBuildPath.get(0);
+            BlockState state = mob.level().getBlockState(next);
+            if (state.isAir() || state.canBeReplaced()) {
+                break;
+            }
+            mind.imaginedBuildPath.remove(0);
+        }
+        mind.plannedBuildPos = mind.imaginedBuildPath.isEmpty() ? null : mind.imaginedBuildPath.get(0);
+    }
+
+    private List<BlockPos> buildImaginaryBuildPath(ChangedEntity mob, LivingEntity target, @Nullable BlockState buildState) {
+        if (buildState == null || isOnNarrowFooting(mob)) {
+            return List.of();
+        }
+
+        Vec3 start = Vec3.atBottomCenterOf(mob.blockPosition());
+        Vec3 end = Vec3.atBottomCenterOf(target.blockPosition());
+        Vec3 delta = end.subtract(start);
+        double horizontalLength = delta.multiply(1.0D, 0.0D, 1.0D).length();
+        if (horizontalLength < 1.0D) {
+            return List.of();
+        }
+
+        int samples = Math.min(Math.max(2, (int)Math.ceil(horizontalLength)), IMAGINARY_PATH_SCAN_BLOCKS);
+        List<BlockPos> placements = new ArrayList<>();
+        Set<BlockPos> virtualBlocks = new HashSet<>();
+        int previousStandY = mob.blockPosition().getY();
+
+        for (int i = 1; i <= samples; i++) {
+            double progress = (double) i / (double) samples;
+            double x = Mth.lerp(progress, start.x, end.x);
+            double z = Mth.lerp(progress, start.z, end.z);
+            int targetStandY = Mth.floor(Mth.lerp(progress, mob.getY(), target.getY()));
+            int standY = Mth.clamp(targetStandY, previousStandY - 1, previousStandY + 1);
+            BlockPos standPos = BlockPos.containing(x, standY, z);
+            BlockPos headPos = standPos.above();
+            BlockPos supportPos = standPos.below();
+
+            if (!isImaginaryPassable(mob, standPos, virtualBlocks) || !isImaginaryPassable(mob, headPos, virtualBlocks)) {
+                return List.of();
+            }
+
+            if (!hasImaginarySupport(mob, supportPos, virtualBlocks)) {
+                if (placements.size() >= IMAGINARY_PATH_MAX_BLOCKS || !canPlaceImaginaryBlockAt(mob, supportPos, buildState, virtualBlocks)) {
+                    return List.of();
+                }
+                BlockPos immutable = supportPos.immutable();
+                placements.add(immutable);
+                virtualBlocks.add(immutable);
+            }
+
+            previousStandY = standPos.getY();
+        }
+
+        return placements;
+    }
+
+    private boolean isImaginaryPassable(ChangedEntity mob, BlockPos pos, Set<BlockPos> virtualBlocks) {
+        if (virtualBlocks.contains(pos)) {
+            return false;
+        }
+
+        BlockState state = mob.level().getBlockState(pos);
+        return state.isAir() || state.canBeReplaced();
+    }
+
+    private boolean hasImaginarySupport(ChangedEntity mob, BlockPos pos, Set<BlockPos> virtualBlocks) {
+        if (virtualBlocks.contains(pos)) {
+            return true;
+        }
+
+        BlockState state = mob.level().getBlockState(pos);
+        return !state.isAir() && !state.getCollisionShape(mob.level(), pos).isEmpty();
+    }
+
+    private boolean canPlaceImaginaryBlockAt(ChangedEntity mob, BlockPos pos, BlockState placeState, Set<BlockPos> virtualBlocks) {
+        if (!mob.level().getBlockState(pos).canBeReplaced()) {
+            return false;
+        }
+        if (!mob.level().getFluidState(pos).isEmpty()) {
+            return false;
+        }
+        if (!mob.level().getWorldBorder().isWithinBounds(pos)) {
+            return false;
+        }
+        if (!hasImaginarySupport(mob, pos.below(), virtualBlocks)) {
+            return false;
+        }
+        return mob.level().isUnobstructed(placeState, pos, net.minecraft.world.phys.shapes.CollisionContext.empty());
+    }
+
+    private boolean shouldPlaceBridgeBlock(ChangedEntity mob, LivingEntity target, BlockPos placePos, @Nullable BlockState placeState) {
+        if (!mob.onGround() || placeState == null || isOnNarrowFooting(mob)) {
+            return false;
+        }
+        if (target.getY() > mob.getY() + 0.8D) {
+            return false;
+        }
+        if (!mob.level().getBlockState(placePos).canBeReplaced()) {
+            return false;
+        }
+        return canPlaceBlockAt(mob, placePos, placeState);
+    }
+
+    private boolean isCautiousPlacement(ChangedEntity mob, BlockPos placePos) {
+        return isOnNarrowFooting(mob) || placePos.getY() < mob.blockPosition().getY();
     }
 
     private boolean canPlaceBlockAt(ChangedEntity mob, BlockPos pos, @Nullable BlockState placeState) {
@@ -1190,10 +1662,10 @@ public class LatexBrain {
         return 1;
     }
 
-    private double estimateBuildCost(ChangedEntity mob, LivingEntity target, @Nullable BlockPos buildPos) {
+    private double estimateBuildCost(ChangedEntity mob, LivingEntity target, @Nullable BlockPos buildPos, List<BlockPos> imaginedBuildPath) {
         if (buildPos == null) return Double.POSITIVE_INFINITY;
         int blocksAvailable = countUsableBuildingBlocks(mob);
-        int blocksNeeded = estimateBuildBlocksNeeded(mob, target, buildPos);
+        int blocksNeeded = imaginedBuildPath.isEmpty() ? estimateBuildBlocksNeeded(mob, target, buildPos) : imaginedBuildPath.size();
         if (blocksAvailable < blocksNeeded) return Double.POSITIVE_INFINITY;
         if (blocksNeeded > 1 && blocksAvailable - blocksNeeded < BUILD_BLOCK_RESERVE) return Double.POSITIVE_INFINITY;
         double verticalPenalty = buildPos.getY() >= mob.blockPosition().getY() ? 4.0D : 0.0D;
@@ -1357,27 +1829,15 @@ public class LatexBrain {
                 + EnchantmentHelper.getTagEnchantmentLevel(net.minecraft.world.item.enchantment.Enchantments.ALL_DAMAGE_PROTECTION, stack) * 1.5D;
     }
 
-    private void maybeAlertNearbyLatex(ChangedEntity mob, LivingEntity target) {
-        LatexMind mind = LatexMindStore.get(mob);
-        if (mind.allyAlertCooldown > 0) return;
-        mind.allyAlertCooldown = 30;
-
-        var box = mob.getBoundingBox().inflate(10.0D);
-        for (ChangedEntity ally : mob.level().getEntitiesOfClass(ChangedEntity.class, box, entity -> entity != mob && entity.isAlive())) {
-            LatexMind allyMind = LatexMindStore.get(ally);
-            ally.setTarget(target);
-            allyMind.remember(target, ally.tickCount, ally.hasLineOfSight(target));
-        }
-    }
-
     @Nullable
-    private LivingEntity findVisibleTarget(ChangedEntity mob) {
-        double range = Math.max(16.0D, mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE));
+    private LivingEntity findVisibleTarget(ChangedEntity mob, LatexMind mind) {
+        double followRange = mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
+        double range = Math.min(Math.max(12.0D, followRange), MAX_VISIBLE_TARGET_RANGE);
         LivingEntity bestTarget = null;
         double bestDistance = Double.MAX_VALUE;
 
         for (LivingEntity candidate : mob.level().getEntitiesOfClass(LivingEntity.class, mob.getBoundingBox().inflate(range))) {
-            if (!isValidAggroTarget(mob, candidate) || !mob.hasLineOfSight(candidate)) {
+            if (!isValidVisibleTarget(mob, candidate, mind) || !mob.hasLineOfSight(candidate)) {
                 continue;
             }
 
@@ -1397,16 +1857,17 @@ public class LatexBrain {
             return null;
         }
 
-        double range = Math.max(24.0D, mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE) + 16.0D);
+        double followRange = mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
+        double range = Math.min(Math.max(16.0D, followRange + 6.0D), MAX_REMEMBERED_TARGET_RANGE);
         for (LivingEntity candidate : mob.level().getEntitiesOfClass(LivingEntity.class, mob.getBoundingBox().inflate(range))) {
-            if (mind.targetId.equals(candidate.getUUID()) && isValidAggroTarget(mob, candidate)) {
+            if (mind.targetId.equals(candidate.getUUID()) && isValidAggroTarget(mob, candidate, mind)) {
                 return candidate;
             }
         }
 
         if (mob.level() instanceof ServerLevel server) {
             Player player = server.getPlayerByUUID(mind.targetId);
-            if (player != null && isValidAggroTarget(mob, player)) {
+            if (player != null && isValidAggroTarget(mob, player, mind)) {
                 return player;
             }
         }
@@ -1414,30 +1875,61 @@ public class LatexBrain {
         return null;
     }
 
-    private boolean isValidAggroTarget(ChangedEntity mob, LivingEntity target) {
+    private boolean isValidAggroTarget(ChangedEntity mob, LivingEntity target, LatexMind mind) {
         if (target == mob || !target.isAlive() || target instanceof ChangedEntity) {
+            return false;
+        }
+        if (mob.distanceToSqr(target) > HARD_TARGET_DROP_RANGE * HARD_TARGET_DROP_RANGE) {
             return false;
         }
 
         if (target instanceof Player player) {
+            if (mob.getType().getCategory() != MobCategory.MONSTER) {
+                return false;
+            }
             if (LatexCuddleHelper.isTamingOwner(mob, player)) {
                 return false;
             }
             if (player.isCreative() || player.isSpectator()) {
                 return false;
             }
-            return true;
+            if (!LatexAiUtil.isPlayerTransfurred(player)) {
+                return true;
+            }
+            return LatexAiUtil.areHostileLatexFactions(mob, player) || mind.isRetaliationTarget(mob, player);
         }
 
+        return isHumanoidTransfurTarget(target);
+    }
+
+    private boolean isValidVisibleTarget(ChangedEntity mob, LivingEntity target, LatexMind mind) {
+        return isValidAggroTarget(mob, target, mind);
+    }
+
+    private boolean isHumanoidTransfurTarget(LivingEntity target) {
         if (target.getType().is(CHANGED_LATEXES)) {
             return false;
         }
 
-        return target.getType().is(CHANGED_HUMANOIDS);
+        return target.getType().is(CHANGED_HUMANOIDS)
+                || target instanceof Zombie
+                || target instanceof AbstractSkeleton
+                || target instanceof Villager
+                || target instanceof Pillager
+                || target instanceof Evoker;
     }
 
     private boolean shouldDropTarget(ChangedEntity mob, LatexMind mind) {
         LivingEntity currentTarget = mob.getTarget();
+        if (currentTarget != null) {
+            double distanceSqr = mob.distanceToSqr(currentTarget);
+            if (distanceSqr > HARD_TARGET_DROP_RANGE * HARD_TARGET_DROP_RANGE) {
+                return true;
+            }
+            if (!mob.hasLineOfSight(currentTarget) && distanceSqr > MAX_REMEMBERED_TARGET_RANGE * MAX_REMEMBERED_TARGET_RANGE) {
+                return true;
+            }
+        }
         if (currentTarget instanceof Player playerTarget && (!playerTarget.isAlive() || playerTarget.isCreative() || playerTarget.isSpectator())) {
             return true;
         }

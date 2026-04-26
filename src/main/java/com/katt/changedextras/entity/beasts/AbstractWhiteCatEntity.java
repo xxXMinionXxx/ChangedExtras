@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeMap;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
@@ -28,7 +29,8 @@ public abstract class AbstractWhiteCatEntity extends ChangedEntity {
     }
 
     public static AttributeSupplier.Builder createAttributes() {
-        return ChangedEntity.createLatexAttributes();
+        return ChangedEntity.createLatexAttributes()
+                .add(Attributes.MOVEMENT_SPEED, 0.27D);
     }
 
     @Override

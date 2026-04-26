@@ -8,11 +8,16 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -24,6 +29,8 @@ import java.util.WeakHashMap;
 
 @Mod.EventBusSubscriber(modid = ChangedExtras.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class LatexMobAIHandler {
+    private static final double MIN_GLOBAL_LATEX_MOVE_SPEED = 0.27D;
+
     private static final Set<ChangedEntity> INSTALLED_MOBS =
             Collections.newSetFromMap(new WeakHashMap<>());
 
@@ -41,10 +48,31 @@ public final class LatexMobAIHandler {
         if (!(event.getEntity() instanceof ChangedEntity mob)) return;
         if (mob.level().isClientSide()) return;
         if (!Config.smartLatexAiEnabled) return;
+        if (LatexAiUtil.isSmartAiExcluded(mob)) {
+            INSTALLED_MOBS.remove(mob);
+            LatexMindStore.forget(mob);
+            return;
+        }
 
         ensureSmartAiInstalled(mob);
         LatexMind mind = LatexMindStore.get(mob);
         mind.tick(mob);
+    }
+
+    @SubscribeEvent
+    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+        if (event.getEntity() instanceof ChangedEntity mob && !event.getLevel().isClientSide()) {
+            INSTALLED_MOBS.remove(mob);
+            LatexMindStore.forget(mob);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLivingDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ChangedEntity mob && !mob.level().isClientSide()) {
+            INSTALLED_MOBS.remove(mob);
+            LatexMindStore.forget(mob);
+        }
     }
 
     @SubscribeEvent
@@ -58,12 +86,14 @@ public final class LatexMobAIHandler {
     }
 
     private static void ensureSmartAiInstalled(ChangedEntity mob) {
-        if (!Config.smartLatexAiEnabled || INSTALLED_MOBS.contains(mob)) {
+        if (!Config.smartLatexAiEnabled || INSTALLED_MOBS.contains(mob) || LatexAiUtil.isSmartAiExcluded(mob)) {
             return;
         }
 
         INSTALLED_MOBS.add(mob);
         removeConflictingLookGoals(mob);
+        removeConflictingCombatGoals(mob);
+        installTargetShareGoal(mob);
         mob.setCanPickUpLoot(true);
 
         AttributeInstance followRange = mob.getAttribute(Attributes.FOLLOW_RANGE);
@@ -71,10 +101,11 @@ public final class LatexMobAIHandler {
             followRange.setBaseValue(40.0D);
         }
 
-        AttributeInstance speed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (speed != null) {
-            speed.setBaseValue(0.24D);
+        AttributeInstance movementSpeed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (movementSpeed != null && movementSpeed.getBaseValue() < MIN_GLOBAL_LATEX_MOVE_SPEED) {
+            movementSpeed.setBaseValue(MIN_GLOBAL_LATEX_MOVE_SPEED);
         }
+
     }
 
     private static void removeConflictingLookGoals(ChangedEntity mob) {
@@ -85,6 +116,27 @@ public final class LatexMobAIHandler {
                             || goal instanceof LookAtPlayerGoal
                             || goal instanceof WaterAvoidingRandomStrollGoal
             );
+        }
+    }
+
+    private static void removeConflictingCombatGoals(ChangedEntity mob) {
+        GoalSelector goals = getSelector(mob, "goalSelector");
+        if (goals != null) {
+            goals.removeAllGoals(goal -> goal instanceof MeleeAttackGoal);
+        }
+
+        GoalSelector targetSelector = getSelector(mob, "targetSelector");
+        if (targetSelector != null) {
+            targetSelector.removeAllGoals(goal ->
+                    goal instanceof HurtByTargetGoal
+                            || goal instanceof NearestAttackableTargetGoal<?>);
+        }
+    }
+
+    private static void installTargetShareGoal(ChangedEntity mob) {
+        GoalSelector targetSelector = getSelector(mob, "targetSelector");
+        if (targetSelector != null) {
+            targetSelector.addGoal(2, new ShareTargetGoal(mob, 12.0D, 10));
         }
     }
 

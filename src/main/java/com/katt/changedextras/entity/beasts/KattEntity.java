@@ -33,6 +33,6 @@ public class KattEntity extends AbstractWhiteCatEntity {
     public static AttributeSupplier.Builder createAttributes() {
         return ChangedEntity.createLatexAttributes()
                 .add(Attributes.MAX_HEALTH, 40.0)
-                .add(Attributes.MOVEMENT_SPEED, 0.3);
+                .add(Attributes.MOVEMENT_SPEED, 0.27D);
     }
 }

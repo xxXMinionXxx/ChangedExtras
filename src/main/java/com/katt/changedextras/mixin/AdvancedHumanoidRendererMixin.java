@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(AdvancedHumanoidRenderer.class)
 public class AdvancedHumanoidRendererMixin {
-    @Inject(method = "render(Lnet/ltxprogrammer/changed/entity/ChangedEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V", at = @At("HEAD"), remap = false)
+    @Inject(method = "render", at = @At("HEAD"), remap = false, require = 0)
     private void changedextras$applyCustomLatexTint(ChangedEntity entity, float entityYaw, float partialTicks, PoseStack poseStack, MultiBufferSource buffer, int packedLight, CallbackInfo ci) {
         if (!(entity instanceof CustomLatexEntity)) {
             return;
@@ -40,14 +40,14 @@ public class AdvancedHumanoidRendererMixin {
         RenderSystem.setShaderColor(red, green, blue, 1.0F);
     }
 
-    @Inject(method = "render(Lnet/ltxprogrammer/changed/entity/ChangedEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V", at = @At("TAIL"), remap = false)
+    @Inject(method = "render", at = @At("TAIL"), remap = false, require = 0)
     private void changedextras$resetCustomLatexTint(ChangedEntity entity, float entityYaw, float partialTicks, PoseStack poseStack, MultiBufferSource buffer, int packedLight, CallbackInfo ci) {
         if (entity instanceof CustomLatexEntity) {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
 
-    @Inject(method = "setupRotations(Lnet/ltxprogrammer/changed/entity/ChangedEntity;Lcom/mojang/blaze3d/vertex/PoseStack;FFF)V", at = @At("TAIL"), remap = false)
+    @Inject(method = "setupRotations", at = @At("TAIL"), remap = false, require = 0)
     private void changedextras$applyCuddleRoll(ChangedEntity entity, PoseStack poseStack, float bob, float bodyRotation, float partialTick, CallbackInfo ci) {
         if (!LatexCuddleHelper.shouldCuddle(entity)) {
             return;

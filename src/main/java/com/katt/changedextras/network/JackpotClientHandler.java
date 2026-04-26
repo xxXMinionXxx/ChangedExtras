@@ -21,15 +21,24 @@ public class JackpotClientHandler {
 
     public static void handlePacket(JackpotStatePacket msg, Supplier<NetworkEvent.Context> ctx) {
         var level = Minecraft.getInstance().level;
-        if (level == null) return;
-
-        Player targetPlayer = level.getPlayerByUUID(msg.getPlayerUUID());
-        if (targetPlayer == null) return;
-
-        // Handle Vignette
         Player localPlayer = Minecraft.getInstance().player;
         if (localPlayer != null && localPlayer.getUUID().equals(msg.getPlayerUUID())) {
             ClientJackpotTracker.setVignetteActive(msg.isActive());
+        }
+
+        if (level == null) {
+            if (!msg.isActive()) {
+                stopEffects(msg.getPlayerUUID());
+            }
+            return;
+        }
+
+        Player targetPlayer = level.getPlayerByUUID(msg.getPlayerUUID());
+        if (targetPlayer == null) {
+            if (!msg.isActive()) {
+                stopEffects(msg.getPlayerUUID());
+            }
+            return;
         }
 
         if (msg.isActive()) {
@@ -64,6 +73,16 @@ public class JackpotClientHandler {
             ACTIVE_SOUNDS.get(uuid).stopLoop();
             ACTIVE_SOUNDS.remove(uuid);
         }
+    }
+
+    public static void stopAllEffects() {
+        for (UUID uuid : java.util.List.copyOf(ACTIVE_PARTICLES.keySet())) {
+            stopEffects(uuid);
+        }
+        for (UUID uuid : java.util.List.copyOf(ACTIVE_SOUNDS.keySet())) {
+            stopEffects(uuid);
+        }
+        ClientJackpotTracker.setVignetteActive(false);
     }
 
     public static class JackpotLoopSound extends AbstractTickableSoundInstance {

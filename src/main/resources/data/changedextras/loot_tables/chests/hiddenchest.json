@@ -6,7 +6,7 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "minecraft:netherite_scraps",
+          "name": "minecraft:netherite_scrap",
           "weight": 1,
           "functions": [
             {
