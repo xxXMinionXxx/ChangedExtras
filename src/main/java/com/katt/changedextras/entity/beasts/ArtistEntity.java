@@ -32,6 +32,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import net.ltxprogrammer.changed.process.ProcessTransfur;
 
 public class ArtistEntity extends AbstractWhiteCatEntity {
     public static final int ATTACK_POSE_NONE = 0;
@@ -102,7 +103,11 @@ public class ArtistEntity extends AbstractWhiteCatEntity {
         this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 16.0F));
         this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true));
+        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true, target ->
+                target instanceof Player player
+                        && !player.isCreative()
+                        && !player.isSpectator()
+                        && !ProcessTransfur.isPlayerTransfurred(player)));
     }
 
     @Override

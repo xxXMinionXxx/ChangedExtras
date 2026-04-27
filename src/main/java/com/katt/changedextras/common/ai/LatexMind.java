@@ -7,14 +7,27 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public final class LatexMind {
     @Nullable public UUID targetId;
+    @Nullable public UUID retaliationTargetId;
     @Nullable public BlockPos lastSeenPos;
     @Nullable public Vec3 lastSeenEye;
     @Nullable public BlockPos plannedBuildPos;
     @Nullable public BlockPos plannedBreakPos;
+    @Nullable public BlockPos activeBreakPos;
+    @Nullable public BlockPos cachedPathTargetPos;
+    @Nullable public BlockPos cachedPathSourcePos;
+    @Nullable public BlockPos cachedTerrainTargetPos;
+    @Nullable public BlockPos cachedTerrainSourcePos;
+    @Nullable public BlockPos cachedTerrainBreakPos;
+    @Nullable public BlockPos cachedTerrainBuildPos;
+    @Nullable public LatexBrain.State cachedTerrainState;
+    public List<BlockPos> imaginedBuildPath = new ArrayList<>();
+    public List<BlockPos> cachedImaginedBuildPath = new ArrayList<>();
 
     public int lastSeenTick = -10000;
     public int stuckTicks = 0;
@@ -30,20 +43,27 @@ public final class LatexMind {
     public int searchTicks = 0;
     public int jumpCooldown = 0;
     public int allyAlertCooldown = 0;
+    public int recentBreakTicks = 0;
+    public int cachedPathTick = -10000;
+    public int cachedTerrainTick = -10000;
+    public int retaliationExpireTick = -10000;
 
     public boolean hasLOS = false;
     public boolean pathFailed = false;
+    public boolean cachedReachablePath = false;
 
     public final LatexBrain brain = new LatexBrain();
     public Vec3 lastSeenTargetEyePos;
     public BlockPos lastSeenTargetPos;
     public int attackCooldown;
+    public float blockBreakProgress;
 
     public void tick(ChangedEntity mob) {
         brain.tick(mob, this);
     }
 
     public void remember(LivingEntity target, int tick, boolean los) {
+        boolean targetChanged = targetId == null || !targetId.equals(target.getUUID());
         targetId = target.getUUID();
         lastSeenPos = target.blockPosition();
         lastSeenEye = target.getEyePosition();
@@ -53,8 +73,25 @@ public final class LatexMind {
         searchTicks = 0;
         lastSeenTargetPos = lastSeenPos;
         lastSeenTargetEyePos = lastSeenEye;
-        plannedBuildPos = null;
-        plannedBreakPos = null;
+        if (targetChanged) {
+            plannedBuildPos = null;
+            plannedBreakPos = null;
+            activeBreakPos = null;
+            blockBreakProgress = 0.0F;
+            imaginedBuildPath.clear();
+            invalidateNavigationCaches();
+        }
+    }
+
+    public void markRetaliationTarget(LivingEntity target, int tick) {
+        retaliationTargetId = target.getUUID();
+        retaliationExpireTick = tick + Math.max(20, Config.latexAttackerMemoryTicks);
+    }
+
+    public boolean isRetaliationTarget(ChangedEntity mob, LivingEntity target) {
+        return retaliationTargetId != null
+                && retaliationTargetId.equals(target.getUUID())
+                && mob.tickCount <= retaliationExpireTick;
     }
 
     public boolean remembersRecentTarget(ChangedEntity mob) {
@@ -64,6 +101,7 @@ public final class LatexMind {
 
     public void clearTarget() {
         targetId = null;
+        retaliationTargetId = null;
         lastSeenPos = null;
         lastSeenEye = null;
         lastSeenTargetPos = null;
@@ -73,9 +111,29 @@ public final class LatexMind {
         searchTicks = 0;
         chaseTime = 0;
         noPathTicks = 0;
+        recentBreakTicks = 0;
         hasLOS = false;
         pathFailed = false;
         plannedBuildPos = null;
         plannedBreakPos = null;
+        activeBreakPos = null;
+        blockBreakProgress = 0.0F;
+        imaginedBuildPath.clear();
+        invalidateNavigationCaches();
+    }
+
+    public void invalidateNavigationCaches() {
+        cachedPathTargetPos = null;
+        cachedPathSourcePos = null;
+        cachedTerrainTargetPos = null;
+        cachedTerrainSourcePos = null;
+        cachedTerrainBreakPos = null;
+        cachedTerrainBuildPos = null;
+        cachedTerrainState = null;
+        cachedImaginedBuildPath.clear();
+        cachedPathTick = -10000;
+        cachedTerrainTick = -10000;
+        cachedReachablePath = false;
+        retaliationExpireTick = -10000;
     }
 }

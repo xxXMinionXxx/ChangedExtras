@@ -2,11 +2,13 @@ package com.katt.changedextras.client;
 
 import com.katt.changedextras.ChangedExtras;
 import com.katt.changedextras.init.ChangedExtrasParticles;
+import com.katt.changedextras.network.JackpotClientHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -43,8 +45,10 @@ public class ClientEventHandler {
         public static void onClientDisconnect(net.minecraftforge.event.level.LevelEvent.Unload event) {
             if (event.getLevel().isClientSide()) {
                 JackpotSoundManager.clear(Minecraft.getInstance());
+                JackpotClientHandler.stopAllEffects();
                 ArtistBossMusicManager.clear(Minecraft.getInstance());
                 ArtistTintManager.clearAll();
+                LatexDebugOverlay.clear();
             }
         }
 
@@ -71,6 +75,14 @@ public class ClientEventHandler {
                         (random.nextDouble() - 0.5) * 0.02
                 );
             }
+        }
+    }
+
+    @Mod.EventBusSubscriber(modid = ChangedExtras.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
+    public static class ClientDebugHandler {
+        @SubscribeEvent
+        public static void onRenderLevelStage(RenderLevelStageEvent event) {
+            LatexDebugOverlay.render(event);
         }
     }
 }

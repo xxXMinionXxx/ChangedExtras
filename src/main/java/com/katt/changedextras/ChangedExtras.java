@@ -4,6 +4,7 @@ import com.katt.changedextras.client.renderer.accessory.DyeableClothingRenderer;
 import com.katt.changedextras.client.ClientEventHandler;
 import com.katt.changedextras.client.particle.JackpotSmokeParticleProvider;
 import com.katt.changedextras.common.ChangedExtrasGameRules;
+import com.katt.changedextras.common.ChangedExtrasSpawnController;
 import com.katt.changedextras.entity.ModEntities;
 import com.katt.changedextras.entity.ModTransfurVariants;
 import com.katt.changedextras.init.ChangedExtrasAbilities;
@@ -18,7 +19,6 @@ import com.katt.changedextras.network.JackpotStatePacket;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import net.ltxprogrammer.changed.item.LatexSyringe;
-import net.ltxprogrammer.changed.item.SimpleSpawnEggItem;
 import net.ltxprogrammer.changed.item.Syringe;
 import net.ltxprogrammer.changed.process.ProcessTransfur;
 import net.minecraft.ChatFormatting;
@@ -41,7 +41,6 @@ import net.minecraftforge.client.event.RegisterColorHandlersEvent;
 import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
-import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -52,6 +51,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.common.ForgeSpawnEggItem;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
@@ -91,6 +91,8 @@ public class ChangedExtras {
             ITEMS.register("conekat_female_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1)));
     public static final RegistryObject<LatexSyringe> WHITE_CAT_SYRINGE =
             ITEMS.register("white_cat_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1)));
+    public static final RegistryObject<LatexSyringe> ARTIST_SYRINGE =
+            ITEMS.register("artist_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
     public static final RegistryObject<Item> THE_PALETTE =
             ITEMS.register("the_palette", () -> new Item(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
     public static final RegistryObject<Item> ARTIST_BRUSH =
@@ -100,15 +102,15 @@ public class ChangedExtras {
     public static final RegistryObject<LatexSyringe> KATT_SYRINGE =
             ITEMS.register("katt_syringe", () -> new LatexSyringe(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
 
-    public static final RegistryObject<SimpleSpawnEggItem> CONEKAT_MALE_SPAWN_EGG =
+    public static final RegistryObject<ForgeSpawnEggItem> CONEKAT_MALE_SPAWN_EGG =
             ITEMS.register("conekat_male_spawn_egg",
-                    () -> new SimpleSpawnEggItem(ModEntities.CONEKAT_MALE, 0xE3D2BF, 0x5A3A2E, new Item.Properties()));
-    public static final RegistryObject<SimpleSpawnEggItem> CONEKAT_FEMALE_SPAWN_EGG =
+                    () -> new ForgeSpawnEggItem(ModEntities.CONEKAT_MALE, 0xE3D2BF, 0x5A3A2E, new Item.Properties()));
+    public static final RegistryObject<ForgeSpawnEggItem> CONEKAT_FEMALE_SPAWN_EGG =
             ITEMS.register("conekat_female_spawn_egg",
-                    () -> new SimpleSpawnEggItem(ModEntities.CONEKAT_FEMALE, 0xE3D2BF, 0xC86A7B, new Item.Properties()));
-    public static final RegistryObject<SimpleSpawnEggItem> WHITE_CAT_SPAWN_EGG =
+                    () -> new ForgeSpawnEggItem(ModEntities.CONEKAT_FEMALE, 0xE3D2BF, 0xC86A7B, new Item.Properties()));
+    public static final RegistryObject<ForgeSpawnEggItem> WHITE_CAT_SPAWN_EGG =
             ITEMS.register("white_cat_spawn_egg",
-                    () -> new SimpleSpawnEggItem(ModEntities.WHITE_CAT, 0xF6F3F3, 0xF1CF6E, new Item.Properties()));
+                    () -> new ForgeSpawnEggItem(ModEntities.WHITE_CAT, 0xF6F3F3, 0xF1CF6E, new Item.Properties()));
     public static final RegistryObject<Item> ARTIST_SPAWN_EGG =
             ITEMS.register("sketch",
                     () -> new ArtistSketchItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
@@ -124,6 +126,7 @@ public class ChangedExtras {
                         output.accept(createVariantSyringeStack(CONEKAT_MALE_SYRINGE.get(), "conekat_male"));
                         output.accept(createVariantSyringeStack(CONEKAT_FEMALE_SYRINGE.get(), "conekat_female"));
                         output.accept(createVariantSyringeStack(WHITE_CAT_SYRINGE.get(), "white_cat"));
+                        output.accept(createVariantSyringeStack(ARTIST_SYRINGE.get(), "artist"));
                         output.accept(createVariantSyringeStack(KATT_SYRINGE.get(), "katt"));
                     })
                     .build());
@@ -164,6 +167,7 @@ public class ChangedExtras {
     private void commonSetup(final FMLCommonSetupEvent event) {
         ChangedExtrasGameRules.bootstrap();
         ChangedExtrasNetwork.register();
+        event.enqueueWork(ChangedExtrasSpawnController::registerSpawnPlacements);
         LOGGER.info("[Changed Extras] Loaded in!");
     }
 
@@ -230,6 +234,8 @@ public class ChangedExtras {
         // Standard variant forcing for other syringes
         if (stack.is(WHITE_CAT_SYRINGE.get())) {
             Syringe.setPureVariant(stack, ResourceLocation.fromNamespaceAndPath(MODID, "white_cat"));
+        } else if (stack.is(ARTIST_SYRINGE.get())) {
+            Syringe.setPureVariant(stack, ResourceLocation.fromNamespaceAndPath(MODID, "artist"));
         } else if (stack.is(CONEKAT_MALE_SYRINGE.get())) {
             Syringe.setPureVariant(stack, ResourceLocation.fromNamespaceAndPath(MODID, "conekat_male"));
         } else if (stack.is(CONEKAT_FEMALE_SYRINGE.get())) {

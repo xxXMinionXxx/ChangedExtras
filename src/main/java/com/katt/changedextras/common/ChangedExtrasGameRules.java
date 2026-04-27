@@ -4,6 +4,36 @@ import com.katt.changedextras.ChangedExtras;
 import net.minecraft.world.level.GameRules;
 
 public final class ChangedExtrasGameRules {
+    public static final GameRules.Key<GameRules.BooleanValue> LATEX_SPAWN_IN_DAY = GameRules.register(
+            "changedextrasLatexSpawnInDay",
+            GameRules.Category.SPAWNING,
+            GameRules.BooleanValue.create(false)
+    );
+
+    public static final GameRules.Key<GameRules.BooleanValue> CONEKAT_MALE_NATURAL_SPAWNS = GameRules.register(
+            "changedextrasConekatMaleNaturalSpawns",
+            GameRules.Category.SPAWNING,
+            GameRules.BooleanValue.create(true)
+    );
+
+    public static final GameRules.Key<GameRules.BooleanValue> CONEKAT_FEMALE_NATURAL_SPAWNS = GameRules.register(
+            "changedextrasConekatFemaleNaturalSpawns",
+            GameRules.Category.SPAWNING,
+            GameRules.BooleanValue.create(true)
+    );
+
+    public static final GameRules.Key<GameRules.BooleanValue> WHITE_CAT_NATURAL_SPAWNS = GameRules.register(
+            "changedextrasWhiteCatNaturalSpawns",
+            GameRules.Category.SPAWNING,
+            GameRules.BooleanValue.create(true)
+    );
+
+    public static final GameRules.Key<GameRules.BooleanValue> ARTIST_NATURAL_SPAWNS = GameRules.register(
+            "changedextrasArtistNaturalSpawns",
+            GameRules.Category.SPAWNING,
+            GameRules.BooleanValue.create(true)
+    );
+
     public static final GameRules.Key<GameRules.BooleanValue> LATEX_EQUIPMENT_ENABLED = GameRules.register(
             "changedextrasLatexEquipmentEnabled",
             GameRules.Category.SPAWNING,

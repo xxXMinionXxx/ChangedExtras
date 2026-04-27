@@ -4,7 +4,6 @@ import com.katt.changedextras.ChangedExtras;
 import com.katt.changedextras.Config;
 import com.katt.changedextras.common.LatexCuddleHelper;
 import net.ltxprogrammer.changed.entity.ChangedEntity;
-import net.ltxprogrammer.changed.process.ProcessTransfur;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
@@ -26,6 +25,10 @@ public final class LatexAggroHandler {
             return;
         }
 
+        if (LatexAiUtil.isSmartAiExcluded(mob)) {
+            return;
+        }
+
         if (!(event.getSource().getEntity() instanceof LivingEntity attacker)) {
             return;
         }
@@ -42,6 +45,7 @@ public final class LatexAggroHandler {
 
         mob.setTarget(attacker);
         LatexMind mind = LatexMindStore.get(mob);
+        mind.markRetaliationTarget(attacker, mob.tickCount);
         mind.remember(attacker, mob.tickCount, mob.hasLineOfSight(attacker));
     }
 
@@ -54,6 +58,6 @@ public final class LatexAggroHandler {
             return !player.isCreative() && !player.isSpectator();
         }
 
-        return ProcessTransfur.getEntityTransfurTolerance(attacker) > 0.0D;
+        return true;
     }
 }
